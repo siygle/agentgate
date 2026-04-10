@@ -1,0 +1,63 @@
+---
+title: API Reference
+description: REST API endpoints for Render4
+---
+
+All API responses follow a unified structure.
+
+| Status | Shape | Meaning |
+| ------ | ---- | ------- |
+| 2xx | `{ "success": true, "data": T }` | Request succeeded, `data` contains the result |
+| 4xx/5xx | `{ "success": false, "error": "..." }` | Request failed, `error` is a human-readable message |
+
+## Create Content
+
+`POST /api/content`
+
+Create a new content entry.
+
+### Request Body
+
+| Field          | Type   | Required | Default      | Description                                                |
+| -------------- | ------ | -------- | ------------ | ---------------------------------------------------------- |
+| `content`      | string | Yes      | —            | The content body                                           |
+| `title`        | string | No       | `null`       | Optional title                                             |
+| `content_type` | string | No       | `"Markdown"` | Content format. Currently only `"Markdown"` is supported.  |
+
+### Example
+
+<Tabs items={['Request', 'Response (201)', 'Error (400)']}>
+  <Tab value="Request">
+    ```json
+    {
+      "title": "My First Post",
+      "content": "Hello world!",
+      "content_type": "Markdown"
+    }
+    ```
+  </Tab>
+  <Tab value="Response (201)">
+    ```json
+    {
+      "success": true,
+      "data": {
+        "id": "clxxxxxxxxxxxxxx",
+        "excerpt": "Hello world!",
+        "preview_url": "https://example.com/c/clxxxxxxxxxxxxxx"
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="Error (400)">
+    ```json
+    {
+      "success": false,
+      "error": "content: Required"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="info">
+  `excerpt` is the first 100 characters of `content`.
+</Callout>
