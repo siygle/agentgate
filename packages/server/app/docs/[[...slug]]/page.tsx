@@ -9,6 +9,18 @@ import { notFound } from "next/navigation";
 import { getMDXComponents } from "@/components/mdx";
 import type { Metadata } from "next";
 import { createRelativeLink } from "fumadocs-ui/mdx";
+
+function docsPath(slug: string[] | undefined): string {
+  if (!slug?.length) return "/docs";
+  return `/docs/${slug.join("/")}`;
+}
+
+function siteOrigin(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_BASE_URL?.trim() || "http://localhost:3000";
+  return raw.replace(/\/+$/, "");
+}
+
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const params = await props.params;
   const page = source.getPage(params.slug);
@@ -42,8 +54,34 @@ export async function generateMetadata(
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const title = page.data.title;
+  const description = page.data.description;
+  const path = docsPath(params.slug);
+  const canonicalUrl = `${siteOrigin()}${path}`;
+  const openGraphTitle = `${title} | diff4 Docs`;
+
   return {
-    title: page.data.title,
-    description: page.data.description,
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title: openGraphTitle,
+      description,
+      url: canonicalUrl,
+      siteName: "diff4",
+      type: "article",
+      locale: "en_US",
+    },
+    twitter: {
+      card: "summary",
+      title: openGraphTitle,
+      description,
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
   };
 }
