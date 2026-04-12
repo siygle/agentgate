@@ -4,29 +4,64 @@ import { useState } from "react"
 import { motion } from "motion/react"
 import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
-function CopyableCommand({ command }: { command: string }) {
+const INSTALL_PROMPT = `Referencing https://diff4.com/docs/cli, help me write a skill that uses diff4.`
+
+function InstallToAgentButton() {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(command)
+    await navigator.clipboard.writeText(INSTALL_PROMPT)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <button
-      onClick={handleCopy}
-      className="group mt-6 inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 font-mono text-sm text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
-    >
-      <span className="text-zinc-400 select-none">$</span>
-      <span>{command}</span>
-      {copied ? (
-        <Check className="ml-1 size-3.5 text-emerald-500" />
-      ) : (
-        <Copy className="ml-1 size-3.5 text-zinc-400 transition-colors group-hover:text-zinc-600 dark:group-hover:text-zinc-300" />
-      )}
-    </button>
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            size="lg"
+            className="rounded-lg"
+          />
+        }
+      >
+        Install to Agent
+      </DialogTrigger>
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <p className="text-sm text-muted-foreground">Copy this prompt to your AI agent, it will install diff4 for you.</p>
+        <DialogDescription className="text-left">
+          <pre className="whitespace-pre-wrap break-words rounded-lg border border-zinc-200 bg-zinc-50 p-4 font-mono text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            <code>{INSTALL_PROMPT}</code>
+          </pre>
+        </DialogDescription>
+        <DialogFooter>
+          <DialogTrigger render={<Button variant="outline" />}>
+            Close
+          </DialogTrigger>
+          <Button onClick={handleCopy}>
+            {copied ? (
+              <>
+                <Check className="size-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="size-3.5" />
+                Copy
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -49,13 +84,12 @@ export function HeroSection() {
         </h1>
 
         <p className="mt-4 max-w-md text-[15px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-          Turn your AI agent's file changes into shareable, beautifully rendered
+          Turn your AI agent&apos;s file changes into shareable, beautifully rendered
           web pages. Works with OpenClaw, Hermes, and any AI agent.
         </p>
 
-        <CopyableCommand command="npx skills add djyde/diff4" />
-
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <InstallToAgentButton />
           <Button
             variant="outline"
             size="lg"

@@ -55,3 +55,17 @@ Requires `.env` with `DATABASE_URL` and `NEXT_PUBLIC_BASE_URL` (see `packages/se
 - `/api/diff`, `/api/files`, `/api/search` — API routes
 - `lib/crypto.ts` — AES-256-GCM encryption/decryption (shared logic with CLI)
 - `components/ai/` — AI-related UI components
+
+## Lessons learned
+
+### CLI-Server encrypted data contract must be explicitly aligned
+
+CLI and Server run on different runtimes (Bun vs Node) and communicate via encrypted payloads. The pre-encryption plaintext JSON structure is an implicit API contract — **any change to one side must be verified against the other**.
+
+Actual incident: CLI `files` command sent `[{path, content}]`, but Server `file-decrypt-viewer` expected `{files: [{title, content}]}`, causing post-decryption parse failure.
+
+**Rules:**
+- When modifying CLI pre-encryption data structure, verify compatibility with Server decrypt components (`diff-decrypt-viewer.tsx`, `file-decrypt-viewer.tsx`)
+- When modifying Server decrypt/parse logic, verify compatibility with CLI commands (`commands/*.ts`)
+- Watch field names: CLI used `path`, Server expects `title`; CLI must wrap with `{files: [...]}`
+- **Core principle: matching crypto algorithms does not guarantee data format compatibility — the plaintext structure is a contract independent of encryption**

@@ -12,16 +12,18 @@ export async function files(
     process.exit(1);
   }
 
-  const bundle = filePaths.map((p) => {
+  const files = filePaths.map((p) => {
     const absolute = resolve(p);
     try {
       const content = readFileSync(absolute, "utf8");
-      return { path: p, content };
+      return { title: p, content };
     } catch (e) {
       console.error(`Failed to read file: ${absolute}`);
       process.exit(1);
     }
   });
+
+  const bundle = { files };
 
   const passphrase = await readPassphrase(options.passphrase);
   await postFiles(JSON.stringify(bundle), { ...options, passphrase });
