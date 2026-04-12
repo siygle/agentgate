@@ -10,6 +10,16 @@ Beautiful file previews for AI coding agents. Turn your AI agent's file changes 
 
 ## Install
 
+### For Agent
+
+Copy this prompt to your agent (OpenClaw, Hermes Agent, etc)
+
+```bash
+Referencing https://diff4.com/docs/cli, help me write a skill that uses diff4.
+```
+
+### For Human
+
 ```bash
 # Install the CLI
 npm install -g @diff4/cli

@@ -12,13 +12,13 @@ export default function Home() {
         <MockChat />
       </div>
       <SecuritySection />
-      <footer className="pb-8 pt-4 text-center text-sm text-neutral-400 dark:text-neutral-600">
-        made with &hearts; by{" "}
+      <footer className="pb-8 pt-4 text-center text-sm text-zinc-400 dark:text-zinc-600">
+        Made with &hearts; by{" "}
         <a
           href="https://x.com/randyloop"
           target="_blank"
           rel="noopener noreferrer"
-          className="underline underline-offset-4 transition-colors hover:text-neutral-600 dark:hover:text-neutral-400"
+          className="inline-flex items-center underline underline-offset-4 transition-colors hover:text-zinc-600 focus-visible:rounded-sm focus-visible:text-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white focus-visible:outline-none dark:hover:text-zinc-400 dark:focus-visible:text-zinc-300 dark:focus-visible:ring-zinc-500/50 dark:focus-visible:ring-offset-black"
         >
           Randy Lu
         </a>

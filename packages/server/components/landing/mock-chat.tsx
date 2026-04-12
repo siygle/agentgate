@@ -1,12 +1,17 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { motion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { FileEdit, GitCommitHorizontal } from "lucide-react"
+import { FileEdit, Files, GitCommitHorizontal } from "lucide-react"
 
 const DiffViewer = dynamic(
   () => import("@/components/diff-viewer").then((m) => m.DiffViewer),
+  { ssr: false }
+)
+
+const FileBundleView = dynamic(
+  () => import("@/components/file-bundle-view").then((m) => m.FileBundleView),
   { ssr: false }
 )
 
@@ -18,14 +23,21 @@ type ChatMessage = {
 type Scenario = {
   id: string
   label: string
+  /** Shown in the fake browser chrome (matches the link in the chat). */
+  browserBar: string
   messages: ChatMessage[]
-  files: { filename: string; language: string; patch: string }[]
+  /** Unified diff preview (`/d/…`); omit when using `bundleFiles`. */
+  files?: { filename: string; language: string; patch: string }[]
+  /** File bundle preview (`/f/…`), same layout as the real viewer. */
+  bundleFiles?: { title: string; content: string }[]
+  bundleExpiresAt?: string
 }
 
 const scenarios: Scenario[] = [
   {
     id: "docs",
     label: "Edit files",
+    browserBar: "diff4.com/dfj3ds",
     messages: [
       {
         role: "agent",
@@ -64,6 +76,7 @@ const scenarios: Scenario[] = [
   {
     id: "commit",
     label: "Commit code",
+    browserBar: "diff4.com/a8x2kq",
     messages: [
       {
         role: "agent",
@@ -121,6 +134,56 @@ const scenarios: Scenario[] = [
       },
     ],
   },
+  {
+    id: "multi",
+    label: "File bundle",
+    browserBar: "diff4.com/f/m7k9nz",
+    messages: [
+      {
+        role: "agent",
+        text: "Here are the env template, Dockerfile, and deploy note—pasting all three below.",
+      },
+      {
+        role: "user",
+        text: "That's awkward to read in chat—put them on diff4",
+      },
+      {
+        role: "agent",
+        text: "Done. Browse them here: https://diff4.com/f/m7k9nz",
+      },
+    ],
+    bundleExpiresAt: "2030-12-31T23:59:59.000Z",
+    bundleFiles: [
+      {
+        title: "config/deploy.env.example",
+        content: `# Copy to .env for production
+DATABASE_URL=postgresql://user:pass@host:5432/render4
+NEXT_PUBLIC_BASE_URL=https://diff4.com
+JWT_SECRET=change-me`,
+      },
+      {
+        title: "Dockerfile",
+        content: `FROM node:22-alpine AS base
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+EXPOSE 3000
+CMD ["pnpm", "start"]
+`,
+      },
+      {
+        title: "docs/DEPLOY.md",
+        content: `# Deploy
+
+1. Set secrets from \`config/deploy.env.example\`.
+2. Build the image: \`docker build -t diff4 .\`
+3. Run with your orchestrator; health check on port 3000.
+`,
+      },
+    ],
+  },
 ]
 
 function ChatBubble({ message }: { message: ChatMessage }) {
@@ -160,13 +223,25 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 }
 
 export function MockChat() {
+  const reduceMotion = useReducedMotion()
+
   return (
     <div className="flex w-full max-w-2xl flex-col gap-6">
       <Tabs defaultValue="docs">
         <div className="flex justify-center">
-          <TabsList className={''} variant={'line'}>
-            <TabsTrigger value="docs"><FileEdit className="size-3.5" />Edit files</TabsTrigger>
-            <TabsTrigger value="commit"><GitCommitHorizontal className="size-3.5" />Commit code</TabsTrigger>
+          <TabsList variant="line">
+            <TabsTrigger value="docs">
+              <FileEdit className="size-3.5" />
+              Edit files
+            </TabsTrigger>
+            <TabsTrigger value="commit">
+              <GitCommitHorizontal className="size-3.5" />
+              Commit code
+            </TabsTrigger>
+            <TabsTrigger value="multi">
+              <Files className="size-3.5" />
+              Pick files
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -176,7 +251,10 @@ export function MockChat() {
               initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.6, ease: [0.25, 1, 0.5, 1] }}
+              transition={{
+                duration: reduceMotion ? 0 : 0.6,
+                ease: [0.25, 1, 0.5, 1],
+              }}
               className="flex flex-col gap-6"
             >
               {scenario.messages.map((msg, i) => (
@@ -189,8 +267,8 @@ export function MockChat() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-80px" }}
               transition={{
-                duration: 0.6,
-                delay: 0.3,
+                duration: reduceMotion ? 0 : 0.6,
+                delay: reduceMotion ? 0 : 0.3,
                 ease: [0.25, 1, 0.5, 1],
               }}
               className="-mx-8 w-[calc(100%+4rem)] max-w-none overflow-hidden rounded-xl border border-zinc-200 sm:-mx-20 sm:w-[calc(100%+10rem)] dark:border-zinc-800"
@@ -201,12 +279,22 @@ export function MockChat() {
                   <div className="size-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
                   <div className="size-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
                 </div>
-                <div className="flex-1 rounded-md bg-white px-3 py-1 text-xs text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
-                  diff4.com/dfj3ds
+                <div className="flex-1 truncate rounded-md bg-white px-3 py-1 text-left text-xs text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+                  {scenario.browserBar}
                 </div>
               </div>
-              <div className="bg-white p-4 dark:bg-black">
-                <DiffViewer files={scenario.files} />
+              <div className="bg-white p-0 dark:bg-black">
+                {scenario.bundleFiles?.length && scenario.bundleExpiresAt ? (
+                  <FileBundleView
+                    files={scenario.bundleFiles}
+                    expiresAt={scenario.bundleExpiresAt}
+                    variant="embed"
+                  />
+                ) : scenario.files ? (
+                  <div className="p-4">
+                    <DiffViewer files={scenario.files} />
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           </TabsContent>

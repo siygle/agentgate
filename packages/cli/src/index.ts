@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import pkg from "../package.json" with { type: "json" };
 import { gitLatest } from "./commands/git-latest.js";
 import { gitStaged } from "./commands/git-staged.js";
 import { files } from "./commands/files.js";
@@ -11,7 +12,7 @@ const program = new Command();
 program
   .name("diff4")
   .description("CLI for diff4 - share encrypted diffs and files")
-  .version("0.1.0");
+  .version(pkg.version);
 
 const defaultServer = process.env.DIFF4_SERVER || "https://diff4.com";
 
