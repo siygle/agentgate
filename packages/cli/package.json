@@ -1,0 +1,26 @@
+{
+  "name": "diff4",
+  "version": "0.1.0",
+  "description": "CLI for diff4 - share encrypted diffs and files",
+  "type": "module",
+  "bin": {
+    "diff4": "./dist/diff4.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --target=node --outfile dist/diff4.js --banner '#!/usr/bin/env node' && chmod +x dist/diff4.js",
+    "build:binary": "bun run scripts/build.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "nanoid": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.8.0"
+  }
+}

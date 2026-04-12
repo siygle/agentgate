@@ -11,9 +11,7 @@ export function ClientRootProvider({
     <RootProvider
       theme={{
         scriptProps:
-          typeof window === "undefined"
-            ? undefined
-            : ({ type: "application/json" } as const),
+          { type: "application/json" } as const,
       }}
     >
       {children}

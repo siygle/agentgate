@@ -4,9 +4,21 @@ description: API references and guides for the diff4 platform.
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
-import { CodeIcon } from 'lucide-react';
+import { CodeIcon, TerminalIcon } from 'lucide-react';
 
 Welcome to the diff4 documentation. Use the sidebar to navigate.
+
+## Tools
+
+<Cards>
+  <Card
+    href="/docs/cli"
+    title="CLI"
+    icon={<TerminalIcon />}
+  >
+    Share encrypted diffs and files directly from the terminal. Supports git-latest, git-staged, and file sharing.
+  </Card>
+</Cards>
 
 ## APIs
 
@@ -16,13 +28,13 @@ Welcome to the diff4 documentation. Use the sidebar to navigate.
     title="Diff API"
     icon={<CodeIcon />}
   >
-    Create shareable diff previews from file patches. Auto-expires after 24 hours.
+    Create shareable diff previews from file patches.
   </Card>
   <Card
-    href="/docs/agent-skills"
-    title="Agent Skills"
+    href="/docs/api-files"
+    title="Files API"
     icon={<CodeIcon />}
   >
-    Scenario skills for AI agents to use diff4 proactively.
+    Create shareable encrypted file bundles.
   </Card>
 </Cards>

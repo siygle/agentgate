@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const generateId = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 
-const createDiffSchema = z.object({
+const createFilesSchema = z.object({
   encrypted_data: z.object({
     ciphertext: z.string().min(1),
     iv: z.string().min(1),
@@ -16,7 +16,7 @@ const createDiffSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const parsed = createDiffSchema.safeParse(body);
+    const parsed = createFilesSchema.safeParse(body);
 
     if (!parsed.success) {
       return err(parsed.error.issues.map((i) => i.message).join(", "));
@@ -26,13 +26,13 @@ export async function POST(request: Request) {
     const expiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const id = generateId();
 
-    const diff = await prisma.diff.create({
+    const bundle = await prisma.fileBundle.create({
       data: { id, encryptedData: encrypted_data, expiredAt },
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
-    return ok({ preview_url: `${baseUrl}/p/${diff.id}`, id: diff.id }, 201);
+    return ok({ preview_url: `${baseUrl}/f/${bundle.id}`, id: bundle.id }, 201);
   } catch {
     return err("Internal server error", 500);
   }

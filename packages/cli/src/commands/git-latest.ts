@@ -1,0 +1,30 @@
+import { spawnSync } from "child_process";
+import { postDiff, readPassphrase } from "../api.js";
+import type { Diff4Options } from "../api.js";
+
+export async function gitLatest(options: Diff4Options): Promise<void> {
+  const result = spawnSync("git", ["diff", "HEAD~1"], {
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  if (result.error) {
+    console.error(`Failed to run git diff: ${result.error.message}`);
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    console.error(`git diff failed: ${result.stderr.trim()}`);
+    process.exit(1);
+  }
+
+  const diff = result.stdout.trim();
+
+  if (!diff) {
+    console.error("No diff found for the latest commit.");
+    process.exit(1);
+  }
+
+  const passphrase = await readPassphrase(options.passphrase);
+  await postDiff(diff, { ...options, passphrase });
+}

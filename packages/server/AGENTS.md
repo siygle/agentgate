@@ -9,3 +9,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 All API routes must use the unified response structure from `@/lib/api-response`. Use `ok(data, status)` for success responses and `err(error, status)` for error responses. Never return raw data or ad-hoc JSON structures from route handlers.
 <!-- END:api-response-rules -->
+
+<!-- BEGIN:verification-rules -->
+# Verification
+
+Use `npx tsc --noEmit` to verify TypeScript compilation. Do NOT use `next build` for type checking.
+<!-- END:verification-rules -->

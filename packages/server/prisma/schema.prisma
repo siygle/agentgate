@@ -8,12 +8,21 @@ datasource db {
 }
 
 model Diff {
-  id         String   @id @default(cuid())
-  title      String
-  files      Json
-  expiredAt  DateTime @map("expired_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  encryptedData Json     @map("encrypted_data")
+  expiredAt     DateTime @map("expired_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("diffs")
+}
+
+model FileBundle {
+  id            String   @id @default(cuid())
+  encryptedData Json     @map("encrypted_data")
+  expiredAt     DateTime @map("expired_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("file_bundles")
 }

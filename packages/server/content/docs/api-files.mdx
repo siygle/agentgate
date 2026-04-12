@@ -1,6 +1,6 @@
 ---
-title: Diff API
-description: Create shareable diff previews via the REST API.
+title: Files API
+description: Create shareable encrypted file bundles via the REST API.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -9,14 +9,14 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 
 ## Overview
 
-The Diff API lets you create an end-to-end encrypted diff preview from a set of file patches. Each diff is assigned a short, shareable ID and a preview URL. The server never sees plaintext data — encryption and decryption happen entirely on the client side.
+The Files API lets you create an end-to-end encrypted file bundle from a set of files. Each bundle is assigned a short, shareable ID and a preview URL. The server never sees plaintext data — encryption and decryption happen entirely on the client side.
 
 <Callout type="warn">
-  Diffs automatically expire after **24 hours** and are no longer accessible after that.
+  File bundles automatically expire after **24 hours** and are no longer accessible after that.
 </Callout>
 
 <Callout>
-  All diff content is **end-to-end encrypted** using AES-256-GCM. The server only stores the encrypted blob and cannot read the content. Viewers must enter the correct passphrase to decrypt.
+  All file content is **end-to-end encrypted** using AES-256-GCM. The server only stores the encrypted blob and cannot read the content. Viewers must enter the correct passphrase to decrypt.
 </Callout>
 
 ## Encryption
@@ -30,16 +30,14 @@ All payloads are encrypted client-side using **AES-256-GCM** with a **PBKDF2**-d
 | Salt | Random 16 bytes (base64) |
 | IV | Random 12 bytes (base64) |
 
-The plaintext to encrypt is a JSON object containing `title` and `files`:
+The plaintext to encrypt is a JSON object containing a `files` array:
 
 ```json
 {
-  "title": "Fix login bug",
   "files": [
     {
-      "filename": "src/auth.ts",
-      "language": "typescript",
-      "patch": "@@ -1,3 +1,4 @@\n..."
+      "title": "src/auth.ts",
+      "content": "export function login(token: string) {\n  ...\n}"
     }
   ]
 }
@@ -74,7 +72,7 @@ function toBase64(buffer: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
 
-async function encryptDiff(plaintext: string, passphrase: string) {
+async function encryptFiles(plaintext: string, passphrase: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(passphrase, salt);
@@ -104,7 +102,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 PBKDF2_ITERATIONS = 600_000
 
 
-def encrypt_diff(plaintext: str, passphrase: str) -> dict:
+def encrypt_files(plaintext: str, passphrase: str) -> dict:
     salt = os.urandom(16)
     iv = os.urandom(12)
 
@@ -120,9 +118,9 @@ def encrypt_diff(plaintext: str, passphrase: str) -> dict:
 
 
 # Usage:
-# payload = json.dumps({"title": "...", "files": [...]})
-# encrypted = encrypt_diff(payload, "my-passphrase")
-# Then POST { "encrypted_data": encrypted } to /api/diff
+# payload = json.dumps({"files": [{"title": "...", "content": "..."}]})
+# encrypted = encrypt_files(payload, "my-passphrase")
+# Then POST { "encrypted_data": encrypted } to /api/files
 ```
 
 Requires the `cryptography` package: `pip install cryptography`
@@ -135,23 +133,25 @@ Requires the `cryptography` package: `pip install cryptography`
 <Steps>
 <Step>
 
-### Encrypt your diff data
+### Encrypt your file data
 
-Encrypt the `{ title, files }` JSON using the encryption function above with your chosen passphrase:
+Encrypt the `{ files }` JSON using the encryption function above with your chosen passphrase:
 
 ```ts
 const plaintext = JSON.stringify({
-  title: "Fix login bug",
   files: [
     {
-      filename: "src/auth.ts",
-      language: "typescript",
-      patch: "@@ -1,5 +1,6 @@\n import { validate } from \"./validator\";\n \n-export function login(token: string) {\n+export function login(token: string, retry = false) {\n   const user = validate(token);\n-  return user;\n+  if (!user && retry) throw new Error(\"retry failed\");\n+  return user;\n }",
+      title: "src/auth.ts",
+      content: "export function login(token: string) {\n  const user = validate(token);\n  return user;\n}",
+    },
+    {
+      title: "README.md",
+      content: "# My Project\n\nA secure file sharing service.",
     },
   ],
 });
 
-const encrypted = await encryptDiff(plaintext, "my-secret-passphrase");
+const encrypted = await encryptFiles(plaintext, "my-secret-passphrase");
 ```
 
 </Step>
@@ -160,7 +160,7 @@ const encrypted = await encryptDiff(plaintext, "my-secret-passphrase");
 ### Send the encrypted payload
 
 ```bash title="cURL"
-curl -X POST https://your-domain.com/api/diff \
+curl -X POST https://your-domain.com/api/files \
   -H "Content-Type: application/json" \
   -d '{
     "encrypted_data": {
@@ -180,8 +180,8 @@ curl -X POST https://your-domain.com/api/diff \
 {
   "success": true,
   "data": {
-    "id": "A3KX9M",
-    "preview_url": "https://your-domain.com/p/A3KX9M"
+    "id": "B7KM2P",
+    "preview_url": "https://your-domain.com/f/B7KM2P"
   }
 }
 ```
@@ -191,7 +191,7 @@ curl -X POST https://your-domain.com/api/diff \
 
 ### Share the link and passphrase
 
-Open `preview_url` in any browser. The viewer will prompt for the passphrase to decrypt and render the diff. If the viewer previously entered the passphrase, it will be remembered in browser storage.
+Open `preview_url` in any browser. The viewer will prompt for the passphrase to decrypt and render the file bundle. The page displays a two-panel layout — file list on the left, selected file's content on the right. If the viewer previously entered the passphrase (shared with diff previews), it will be remembered automatically.
 
 </Step>
 </Steps>
@@ -199,7 +199,7 @@ Open `preview_url` in any browser. The viewer will prompt for the passphrase to 
 ## Endpoint
 
 ```
-POST /api/diff
+POST /api/files
 ```
 
 ## Request Body
@@ -227,16 +227,16 @@ Send a JSON object with the following field:
 {
   "success": true,
   "data": {
-    "id": "A3KX9M",
-    "preview_url": "https://your-domain.com/p/A3KX9M"
+    "id": "B7KM2P",
+    "preview_url": "https://your-domain.com/f/B7KM2P"
   }
 }
 ```
 
-| Field         | Type     | Description                       |
-| ------------- | -------- | --------------------------------- |
-| `id`          | `string` | 6-character ID for the diff       |
-| `preview_url` | `string` | Full URL to view the diff preview |
+| Field         | Type     | Description                        |
+| ------------- | -------- | ---------------------------------- |
+| `id`          | `string` | 6-character ID for the file bundle |
+| `preview_url` | `string` | Full URL to view the file bundle   |
 
   </Tab>
   <Tab value="400 Validation">
@@ -265,7 +265,8 @@ Returned when required fields are missing or invalid.
 
 ## Notes
 
-- The plaintext (before encryption) must be valid JSON with `title` (string) and `files` (array of file entries).
-- Each file entry has `filename` (string, required), `language` (string, optional), and `patch` (string, required, unified diff format).
-- The server **cannot** decrypt the content. If the passphrase is lost, the diff is unrecoverable.
-- No authentication is required to create or view diffs, but the passphrase is needed to decrypt.
+- The plaintext (before encryption) must be valid JSON with a `files` array.
+- Each file entry has `title` (string, required) and `content` (string, required).
+- The server **cannot** decrypt the content. If the passphrase is lost, the files are unrecoverable.
+- No authentication is required to create or view file bundles, but the passphrase is needed to decrypt.
+- Passphrase storage is shared with the Diff API — entering a passphrase for one will be remembered for the other.
