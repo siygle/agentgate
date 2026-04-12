@@ -169,27 +169,32 @@ const LANGUAGES = [
   "shell",
 ] as BundledLanguage[];
 
+let highlighterPromise: Promise<Highlighter> | null = null;
+
+function getHighlighter() {
+  if (!highlighterPromise) {
+    highlighterPromise = createHighlighter({
+      themes: ["github-light", "github-dark-default"],
+      langs: LANGUAGES,
+    });
+  }
+  return highlighterPromise;
+}
+
 function useHighlighter() {
-  const ref = useRef<Highlighter | null>(null);
-  const [ready, setReady] = useState(false);
+  const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    createHighlighter({
-      themes: ["github-light", "github-dark-default"],
-      langs: LANGUAGES,
-    }).then((h) => {
-      if (!cancelled) {
-        ref.current = h;
-        setReady(true);
-      }
+    getHighlighter().then((h) => {
+      if (!cancelled) setHighlighter(h);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return { highlighter: ref.current, ready };
+  return { highlighter, ready: highlighter !== null };
 }
 
 function resolveLang(

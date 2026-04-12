@@ -1,0 +1,217 @@
+"use client"
+
+import dynamic from "next/dynamic"
+import { motion } from "motion/react"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { FileEdit, GitCommitHorizontal } from "lucide-react"
+
+const DiffViewer = dynamic(
+  () => import("@/components/diff-viewer").then((m) => m.DiffViewer),
+  { ssr: false }
+)
+
+type ChatMessage = {
+  role: "agent" | "user"
+  text: string
+}
+
+type Scenario = {
+  id: string
+  label: string
+  messages: ChatMessage[]
+  files: { filename: string; language: string; patch: string }[]
+}
+
+const scenarios: Scenario[] = [
+  {
+    id: "docs",
+    label: "Edit files",
+    messages: [
+      {
+        role: "agent",
+        text: "OK, I've edited the documentation for you.",
+      },
+      {
+        role: "user",
+        text: "Use diff4 to see what you've changed.",
+      },
+      {
+        role: "agent",
+        text: "Sure. Please review this on https://diff4.com/dfj3ds",
+      },
+    ],
+    files: [
+      {
+        filename: "README.md",
+        language: "markdown",
+        patch: `--- a/README.md
++++ b/README.md
+@@ -1,6 +1,8 @@
+ # diff4
+ 
+-Better way to see what your AI agent changes.
++A better way to see what your AI agent changes.
+ 
+-## Getting started
++Share encrypted diffs and files. See exactly what changed, instantly.
+ 
++## Getting started
++
+ Run \`npx diff4 share\` to share a diff.`,
+      },
+    ],
+  },
+  {
+    id: "commit",
+    label: "Commit code",
+    messages: [
+      {
+        role: "agent",
+        text: "I've committed the new auth module with 3 files changed.",
+      },
+      {
+        role: "user",
+        text: "Use diff4 to see your commit changes.",
+      },
+      {
+        role: "agent",
+        text: "Done. Here's the link: https://diff4.com/a8x2kq",
+      },
+    ],
+    files: [
+      {
+        filename: "src/auth/session.ts",
+        language: "typescript",
+        patch: `--- a/src/auth/session.ts
++++ b/src/auth/session.ts
+@@ -1,8 +1,12 @@
+-import { verify } from "./jwt";
++import { verify, decode } from "./jwt";
+ 
+-export function getSession(token: string) {
+-  return verify(token);
++export async function getSession(token: string) {
++  const payload = await verify(token);
++  return {
++    ...payload,
++    isNew: payload.iat > Date.now() / 1000 - 60,
++  };
+ }
+ 
++export function decodeSession(token: string) {
++  return decode(token);
++}`,
+      },
+      {
+        filename: "src/auth/jwt.ts",
+        language: "typescript",
+        patch: `--- a/src/auth/jwt.ts
++++ b/src/auth/jwt.ts
+@@ -5,7 +5,7 @@ const SECRET = process.env.JWT_SECRET;
+ 
+ export async function verify(token: string) {
+   const { payload } = await jwtVerify(token, new TextEncoder().encode(SECRET));
+-  return payload;
++  return payload as SessionPayload;
+ }
+ 
+-export function decode(token: string) {
++export async function decode(token: string) {
+   const { payload } = await jwtVerify(token, new TextEncoder().encode(SECRET), { algorithms: ["HS256"] });`,
+      },
+    ],
+  },
+]
+
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const isAgent = message.role === "agent"
+  const parts = message.text.split(/(https?:\/\/[^\s]+)/g)
+
+  return (
+    <div className={`flex ${isAgent ? "justify-start" : "justify-end"}`}>
+      <div className="flex max-w-[85%] flex-col">
+        <span
+          className={`mb-1.5 text-xs font-medium text-zinc-400 dark:text-zinc-500 ${isAgent ? "text-left" : "text-right"
+            }`}
+        >
+          {isAgent ? "Agent" : "You"}
+        </span>
+        <div
+          className={`rounded-2xl px-4 py-3 ${isAgent
+              ? "rounded-tl-md bg-zinc-100 dark:bg-zinc-800"
+              : "rounded-tr-md bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+            }`}
+        >
+          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">
+            {parts.map((part, i) =>
+              /^https?:\/\//.test(part) ? (
+                <span key={i} className="rounded bg-emerald-500/10 px-1 py-0.5 font-mono text-[13px] text-emerald-600 dark:text-emerald-400">
+                  {part}
+                </span>
+              ) : (
+                <span key={i}>{part}</span>
+              )
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function MockChat() {
+  return (
+    <div className="flex w-full max-w-2xl flex-col gap-6">
+      <Tabs defaultValue="docs">
+        <div className="flex justify-center">
+          <TabsList className={''} variant={'line'}>
+            <TabsTrigger value="docs"><FileEdit className="size-3.5" />Edit files</TabsTrigger>
+            <TabsTrigger value="commit"><GitCommitHorizontal className="size-3.5" />Commit code</TabsTrigger>
+          </TabsList>
+        </div>
+
+        {scenarios.map((scenario) => (
+          <TabsContent key={scenario.id} value={scenario.id} className="mt-6 flex flex-col gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6, ease: [0.25, 1, 0.5, 1] }}
+              className="flex flex-col gap-6"
+            >
+              {scenario.messages.map((msg, i) => (
+                <ChatBubble key={i} message={msg} />
+              ))}
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{
+                duration: 0.6,
+                delay: 0.3,
+                ease: [0.25, 1, 0.5, 1],
+              }}
+              className="-mx-8 w-[calc(100%+4rem)] max-w-none overflow-hidden rounded-xl border border-zinc-200 sm:-mx-20 sm:w-[calc(100%+10rem)] dark:border-zinc-800"
+            >
+              <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex gap-1.5">
+                  <div className="size-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                  <div className="size-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                  <div className="size-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                </div>
+                <div className="flex-1 rounded-md bg-white px-3 py-1 text-xs text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+                  diff4.com/dfj3ds
+                </div>
+              </div>
+              <div className="bg-white p-4 dark:bg-black">
+                <DiffViewer files={scenario.files} />
+              </div>
+            </motion.div>
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
+  )
+}
