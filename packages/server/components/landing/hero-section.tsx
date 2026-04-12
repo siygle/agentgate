@@ -1,6 +1,33 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "motion/react"
+import { Check, Copy } from "lucide-react"
+
+function CopyableCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(command)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="group mt-6 inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 font-mono text-sm text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+    >
+      <span className="text-zinc-400 select-none">$</span>
+      <span>{command}</span>
+      {copied ? (
+        <Check className="ml-1 size-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="ml-1 size-3.5 text-zinc-400 transition-colors group-hover:text-zinc-600 dark:group-hover:text-zinc-300" />
+      )}
+    </button>
+  )
+}
 
 export function HeroSection() {
   return (
@@ -17,7 +44,7 @@ export function HeroSection() {
         </div>
 
         <h1 className="text-4xl leading-[1.1] font-semibold tracking-tight text-zinc-900 sm:text-5xl md:text-6xl dark:text-zinc-50">
-          Beautiful diffs for AI coding agents
+          Beautiful file previews for AI coding agents
         </h1>
 
         <p className="mt-4 max-w-md text-[15px] leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -25,13 +52,9 @@ export function HeroSection() {
           web pages. Works with OpenClaw, Hermes, and any AI agent.
         </p>
 
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <a
-            href="/docs"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Get started
-          </a>
+        <CopyableCommand command="npx skills add djyde/diff4" />
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <a
             href="/docs"
             className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-200 bg-white px-6 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"

@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "diff4 — Beautiful diffs for AI coding agents",
+  title: "diff4 — Beautiful file previews for AI coding agents",
   description:
-    "Turn your AI agent's code changes into shareable, beautifully rendered web pages. Works with OpenClaw, Hermes, and any coding agent — no more ugly terminal diffs.",
+    "Turn your AI agent's file changes into shareable, beautifully rendered web pages. Works with OpenClaw, Hermes, and any coding agent — no more ugly terminal diffs.",
 };
 
 export default function RootLayout({

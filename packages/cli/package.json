@@ -1,6 +1,6 @@
 {
   "name": "@diff4/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for diff4 - share encrypted diffs and files",
   "type": "module",
   "bin": {
