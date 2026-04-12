@@ -9,16 +9,11 @@ import { notFound } from "next/navigation";
 import { getMDXComponents } from "@/components/mdx";
 import type { Metadata } from "next";
 import { createRelativeLink } from "fumadocs-ui/mdx";
+import { OG_IMAGE_PATH, siteOrigin } from "@/lib/site";
 
 function docsPath(slug: string[] | undefined): string {
   if (!slug?.length) return "/docs";
   return `/docs/${slug.join("/")}`;
-}
-
-function siteOrigin(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_BASE_URL?.trim() || "http://localhost:3000";
-  return raw.replace(/\/+$/, "");
 }
 
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
@@ -73,11 +68,15 @@ export async function generateMetadata(
       siteName: "diff4",
       type: "article",
       locale: "en_US",
+      images: [
+        { url: OG_IMAGE_PATH, width: 1200, height: 630, alt: "diff4" },
+      ],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: openGraphTitle,
       description,
+      images: [OG_IMAGE_PATH],
     },
     robots: {
       index: true,
