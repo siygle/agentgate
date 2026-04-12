@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm db:generate && pnpm build
+RUN pnpm db:generate && pnpm build && pnpm db:deploy
 
 FROM base AS runner
 ENV NODE_ENV=production
@@ -19,7 +19,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-RUN npm run db:deploy
 
 USER nextjs
 EXPOSE 3000
