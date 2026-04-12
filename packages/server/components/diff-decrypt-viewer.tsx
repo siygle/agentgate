@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { decrypt, type EncryptedPayload } from "@/lib/crypto";
+import { phCapture, phCaptureException } from "@/lib/posthog-client";
 import {
   EncryptionKeyPrompt,
   getStoredPassphrase,
@@ -57,11 +58,16 @@ export function DiffDecryptViewer({
         }
 
         setDiff(parsed);
+        phCapture("diff_decryption_succeeded", {
+          file_count: parsed.files.length,
+        });
 
         if (remember) {
           storePassphrase(passphrase);
         }
-      } catch {
+      } catch (error) {
+        phCapture("diff_decryption_failed");
+        phCaptureException(error);
         setError(
           "Decryption failed. The passphrase is incorrect or the data is corrupted.",
         );

@@ -2,6 +2,7 @@ import { ok, err } from "@/lib/api-response";
 import prisma from "@/lib/prisma";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 const generateId = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 
@@ -31,6 +32,16 @@ export async function POST(request: Request) {
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+    const posthog = getPostHogClient();
+    posthog?.capture({
+      distinctId: bundle.id,
+      event: "files_created",
+      properties: {
+        bundle_id: bundle.id,
+        expires_at: expiredAt.toISOString(),
+      },
+    });
 
     return ok({ preview_url: `${baseUrl}/f/${bundle.id}`, id: bundle.id }, 201);
   } catch {

@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { phCapture } from "@/lib/posthog-client"
 
 const INSTALL_PROMPT = `Referencing https://diff4.com/docs/cli, help me write a skill that uses diff4.`
 
@@ -26,16 +27,18 @@ function InstallToAgentButton() {
     await navigator.clipboard.writeText(INSTALL_PROMPT)
     setCopiedInstall(true)
     setTimeout(() => setCopiedInstall(false), 2000)
+    phCapture("install_prompt_copied")
   }
 
   const handleCopyTryIt = async () => {
     await navigator.clipboard.writeText(TRY_IT_PROMPT)
     setCopiedTryIt(true)
     setTimeout(() => setCopiedTryIt(false), 2000)
+    phCapture("try_it_prompt_copied")
   }
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => { if (open) phCapture("install_to_agent_dialog_opened") }}>
       <DialogTrigger
         render={
           <Button

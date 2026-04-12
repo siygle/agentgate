@@ -32,6 +32,8 @@
     "nanoid": "^5.1.7",
     "next": "16.2.3",
     "next-safe-action": "^8.4.0",
+    "posthog-js": "^1.367.0",
+    "posthog-node": "^5.29.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
