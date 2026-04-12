@@ -1,6 +1,6 @@
 ---
 name: diff4
-description: Share encrypted git diffs and files using the diff4 CLI. Use when the user wants to share code changes, send diffs for review files content securely via diff4
+description: Preview git diffs and files using the diff4 CLI. Use when the user wants to see code changes, review files content securely via diff4
 metadata:
   author: diff4
   version: "0.1.0"
@@ -12,7 +12,7 @@ diff4 encrypts diffs and files client-side (AES-256-GCM) before uploading. The s
 
 ## Prerequisites
 
-- `diff4` must be installed and available on PATH
+- `diff4` must be installed and available on PATH. Use `npm i -g @diff4/cli` to install.
 - A passphrase must be configured (see setup below)
 
 ## Setup (first time)

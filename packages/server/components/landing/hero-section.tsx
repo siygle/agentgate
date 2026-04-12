@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { motion } from "motion/react"
 import { Check, Copy } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false)
@@ -55,12 +56,14 @@ export function HeroSection() {
         <CopyableCommand command="npx skills add djyde/diff4" />
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <a
-            href="/docs"
-            className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-200 bg-white px-6 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          <Button
+            variant="outline"
+            size="lg"
+            nativeButton={false}
+            render={<a href="/docs" />}
           >
             View docs
-          </a>
+          </Button>
         </div>
       </motion.div>
     </section>
