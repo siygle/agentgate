@@ -103,7 +103,7 @@ export function DiffDecryptViewer({
 
   if (diff) {
     return (
-      <div className="max-w-5xl w-full mx-auto px-4 py-8 overflow-hidden">
+      <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-8">
         <div className="mb-6">
           <h1 className="text-lg font-semibold text-foreground truncate">
             {diff.title}

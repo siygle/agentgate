@@ -38,10 +38,16 @@ type ParsedFile = {
 type ThemedToken = ThemedTokenWithVariants;
 
 type SplitLine =
-  | { kind: "equal"; left: ParsedLine; right: ParsedLine }
-  | { kind: "delete-only"; left: ParsedLine }
-  | { kind: "insert-only"; right: ParsedLine }
-  | { kind: "change"; left: ParsedLine; right: ParsedLine }
+  | { kind: "equal"; left: ParsedLine; right: ParsedLine; lineIdx: number }
+  | { kind: "delete-only"; left: ParsedLine; leftIdx: number }
+  | { kind: "insert-only"; right: ParsedLine; rightIdx: number }
+  | {
+      kind: "change";
+      left: ParsedLine;
+      right: ParsedLine;
+      leftIdx: number;
+      rightIdx: number;
+    }
   | { kind: "separator" };
 
 function langFromFilename(filename: string): string {
@@ -113,15 +119,22 @@ function buildSplitLines(lines: ParsedLine[]): SplitLine[] {
 
   while (i < lines.length) {
     if (lines[i].type === "context") {
-      result.push({ kind: "equal", left: lines[i], right: lines[i] });
+      result.push({
+        kind: "equal",
+        left: lines[i],
+        right: lines[i],
+        lineIdx: i,
+      });
       i++;
     } else {
       const dels: ParsedLine[] = [];
-      const adds: ParsedLine[] = [];
+      const delStart = i;
       while (i < lines.length && lines[i].type === "delete") {
         dels.push(lines[i]);
         i++;
       }
+      const insStart = i;
+      const adds: ParsedLine[] = [];
       while (i < lines.length && lines[i].type === "insert") {
         adds.push(lines[i]);
         i++;
@@ -129,13 +142,27 @@ function buildSplitLines(lines: ParsedLine[]): SplitLine[] {
 
       const pairs = Math.min(dels.length, adds.length);
       for (let p = 0; p < pairs; p++) {
-        result.push({ kind: "change", left: dels[p], right: adds[p] });
+        result.push({
+          kind: "change",
+          left: dels[p],
+          right: adds[p],
+          leftIdx: delStart + p,
+          rightIdx: insStart + p,
+        });
       }
       for (let p = pairs; p < dels.length; p++) {
-        result.push({ kind: "delete-only", left: dels[p] });
+        result.push({
+          kind: "delete-only",
+          left: dels[p],
+          leftIdx: delStart + p,
+        });
       }
       for (let p = pairs; p < adds.length; p++) {
-        result.push({ kind: "insert-only", right: adds[p] });
+        result.push({
+          kind: "insert-only",
+          right: adds[p],
+          rightIdx: insStart + p,
+        });
       }
     }
   }
@@ -286,6 +313,12 @@ function LineContent({
   line: ParsedLine;
   tokens: ThemedToken[] | null;
 }) {
+  const body =
+    tokens && tokens.length > 0 ? (
+      <HighlightedContent tokens={tokens} />
+    ) : (
+      line.content
+    );
   return (
     <>
       <span
@@ -299,7 +332,7 @@ function LineContent({
       >
         {line.type === "insert" ? "+" : line.type === "delete" ? "-" : " "}
       </span>
-      {tokens ? <HighlightedContent tokens={tokens} /> : line.content}
+      {body}
     </>
   );
 }
@@ -314,8 +347,13 @@ function UnifiedView({
   let tokenIdx = 0;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[13px] font-mono leading-5">
+    <div className="min-w-0">
+      <table className="w-full table-fixed border-collapse text-[13px] font-mono leading-5">
+        <colgroup>
+          <col className="w-9" />
+          <col className="w-9" />
+          <col />
+        </colgroup>
         <tbody>
           {file.hunks.flatMap((hunk, hunkIdx) => [
             hunkIdx > 0 ? (
@@ -347,13 +385,13 @@ function UnifiedView({
                         : "hover:bg-stone-50 dark:hover:bg-stone-900/40"
                   }
                 >
-                  <td className="border-r border-stone-100 dark:border-stone-800/60 w-9 min-w-9">
+                  <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                     <LineNumber num={line.oldNumber} />
                   </td>
-                  <td className="border-r border-stone-100 dark:border-stone-800/60 w-9 min-w-9">
+                  <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                     <LineNumber num={line.newNumber} />
                   </td>
-                  <td className="px-2 whitespace-pre">
+                  <td className="min-w-0 px-2 align-top whitespace-pre-wrap break-all">
                     <LineContent line={line} tokens={lineTokens} />
                   </td>
                 </tr>
@@ -400,13 +438,13 @@ function SplitView({
   });
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[13px] font-mono leading-5">
+    <div className="min-w-0">
+      <table className="w-full table-fixed border-collapse text-[13px] font-mono leading-5">
         <colgroup>
-          <col className="w-9 min-w-9" />
-          <col />
-          <col className="w-9 min-w-9" />
-          <col />
+          <col className="w-9" />
+          <col className="w-[calc((100%-4.5rem)/2)]" />
+          <col className="w-9" />
+          <col className="w-[calc((100%-4.5rem)/2)]" />
         </colgroup>
         <tbody>
           {splitLinesByHunk.flatMap(
@@ -428,20 +466,20 @@ function SplitView({
                 if (sl.kind === "separator") return null;
 
                 if (sl.kind === "equal") {
-                  const idx = startIdx + li;
+                  const idx = startIdx + sl.lineIdx;
                   const tokens = getTokens(tokenMap, idx);
                   return (
                     <tr key={`s-${hunkIdx}-${li}`}>
-                      <td className="border-r border-stone-100 dark:border-stone-800/60">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                         <LineNumber num={sl.left.oldNumber} />
                       </td>
-                      <td className="border-r border-stone-200 dark:border-stone-700 px-3 whitespace-pre hover:bg-stone-50 dark:hover:bg-stone-900/40">
+                      <td className="min-w-0 border-r border-stone-200 dark:border-stone-700 px-3 align-top whitespace-pre-wrap break-all hover:bg-stone-50 dark:hover:bg-stone-900/40">
                         <LineContent line={sl.left} tokens={tokens} />
                       </td>
-                      <td className="border-r border-stone-100 dark:border-stone-800/60">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                         <LineNumber num={sl.right.newNumber} />
                       </td>
-                      <td className="px-3 whitespace-pre hover:bg-stone-50 dark:hover:bg-stone-900/40">
+                      <td className="min-w-0 px-3 align-top whitespace-pre-wrap break-all hover:bg-stone-50 dark:hover:bg-stone-900/40">
                         <LineContent line={sl.right} tokens={tokens} />
                       </td>
                     </tr>
@@ -449,17 +487,17 @@ function SplitView({
                 }
 
                 if (sl.kind === "delete-only") {
-                  const idx = startIdx + li;
+                  const idx = startIdx + sl.leftIdx;
                   const tokens = getTokens(tokenMap, idx);
                   return (
                     <tr
                       key={`s-${hunkIdx}-${li}`}
                       className="bg-red-50 dark:bg-red-950/20"
                     >
-                      <td className="border-r border-stone-100 dark:border-stone-800/60">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                         <LineNumber num={sl.left.oldNumber} />
                       </td>
-                      <td className="border-r border-stone-200 dark:border-stone-700 px-3 whitespace-pre">
+                      <td className="min-w-0 border-r border-stone-200 dark:border-stone-700 px-3 align-top whitespace-pre-wrap break-all">
                         <LineContent line={sl.left} tokens={tokens} />
                       </td>
                       <td className="border-r border-stone-100 dark:border-stone-800/60" />
@@ -469,7 +507,7 @@ function SplitView({
                 }
 
                 if (sl.kind === "insert-only") {
-                  const idx = startIdx + li;
+                  const idx = startIdx + sl.rightIdx;
                   const tokens = getTokens(tokenMap, idx);
                   return (
                     <tr
@@ -478,10 +516,10 @@ function SplitView({
                     >
                       <td className="border-r border-stone-100 dark:border-stone-800/60" />
                       <td className="bg-stone-50/50 dark:bg-stone-900/30" />
-                      <td className="border-r border-stone-100 dark:border-stone-800/60">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 align-top">
                         <LineNumber num={sl.right.newNumber} />
                       </td>
-                      <td className="px-3 whitespace-pre">
+                      <td className="min-w-0 px-3 align-top whitespace-pre-wrap break-all">
                         <LineContent line={sl.right} tokens={tokens} />
                       </td>
                     </tr>
@@ -489,22 +527,22 @@ function SplitView({
                 }
 
                 if (sl.kind === "change") {
-                  const leftIdx = startIdx + li;
+                  const leftIdx = startIdx + sl.leftIdx;
+                  const rightIdx = startIdx + sl.rightIdx;
                   const leftTokens = getTokens(tokenMap, leftIdx);
-                  const rightIdx = startIdx + li;
                   const rightTokens = getTokens(tokenMap, rightIdx);
                   return (
                     <tr key={`s-${hunkIdx}-${li}`}>
-                      <td className="border-r border-stone-100 dark:border-stone-800/60 bg-red-50 dark:bg-red-950/20">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 bg-red-50 dark:bg-red-950/20 align-top">
                         <LineNumber num={sl.left.oldNumber} />
                       </td>
-                      <td className="border-r border-stone-200 dark:border-stone-700 bg-red-50 dark:bg-red-950/20 px-3 whitespace-pre">
+                      <td className="min-w-0 border-r border-stone-200 dark:border-stone-700 bg-red-50 dark:bg-red-950/20 px-3 align-top whitespace-pre-wrap break-all">
                         <LineContent line={sl.left} tokens={leftTokens} />
                       </td>
-                      <td className="border-r border-stone-100 dark:border-stone-800/60 bg-emerald-50 dark:bg-emerald-950/20">
+                      <td className="border-r border-stone-100 dark:border-stone-800/60 bg-emerald-50 dark:bg-emerald-950/20 align-top">
                         <LineNumber num={sl.right.newNumber} />
                       </td>
-                      <td className="bg-emerald-50 dark:bg-emerald-950/20 px-3 whitespace-pre">
+                      <td className="min-w-0 bg-emerald-50 dark:bg-emerald-950/20 px-3 align-top whitespace-pre-wrap break-all">
                         <LineContent line={sl.right} tokens={rightTokens} />
                       </td>
                     </tr>
@@ -529,17 +567,17 @@ function DiffFileBlock({
   const highlighted = useHighlightedLines(highlighter, allLines, file.language);
 
   return (
-    <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950">
+    <div className="min-w-0 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-950">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-stone-50 dark:bg-stone-900/80 border-b border-stone-200 dark:border-stone-800">
         <span className="text-xs font-mono font-medium text-stone-700 dark:text-stone-300 truncate">
           {file.newName.replace(/^b\//, "")}
         </span>
         <FileBadge additions={file.additions} deletions={file.deletions} />
       </div>
-      <div className="overflow-x-auto md:hidden">
+      <div className="min-w-0 px-1 md:hidden">
         <UnifiedView file={file} highlighted={highlighted} />
       </div>
-      <div className="overflow-x-auto hidden md:block">
+      <div className="min-w-0 px-1 hidden md:block">
         <SplitView file={file} highlighted={highlighted} />
       </div>
     </div>
@@ -566,7 +604,7 @@ export function DiffViewer({ files }: DiffViewerProps) {
   );
 
   return (
-    <div className="flex flex-col gap-4 min-w-0">
+    <div className="flex min-w-0 flex-col gap-4">
       {summary}
       {parsed.map((file, i) => (
         <DiffFileBlock key={i} file={file} highlighter={highlighter} />

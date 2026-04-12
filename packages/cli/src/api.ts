@@ -1,15 +1,18 @@
 import { encrypt } from "./crypto.js";
+import type { DiffUploadPayload } from "./diff-payload.js";
 
 export type Diff4Options = {
   server: string;
   passphrase: string;
 };
 
+export type { DiffUploadPayload } from "./diff-payload.js";
+
 export async function postDiff(
-  content: string,
+  payload: DiffUploadPayload,
   options: Diff4Options,
 ): Promise<void> {
-  const encrypted = await encrypt(content, options.passphrase);
+  const encrypted = await encrypt(JSON.stringify(payload), options.passphrase);
 
   const res = await fetch(`${options.server}/api/diff`, {
     method: "POST",

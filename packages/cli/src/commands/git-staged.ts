@@ -1,4 +1,5 @@
 import { spawnSync } from "child_process";
+import { buildPayloadFromUnifiedDiff } from "../diff-payload.js";
 import { postDiff, readPassphrase } from "../api.js";
 import type { Diff4Options } from "../api.js";
 
@@ -26,5 +27,8 @@ export async function gitStaged(options: Diff4Options): Promise<void> {
   }
 
   const passphrase = await readPassphrase(options.passphrase);
-  await postDiff(diff, { ...options, passphrase });
+  await postDiff(buildPayloadFromUnifiedDiff(diff, "Staged changes"), {
+    ...options,
+    passphrase,
+  });
 }
