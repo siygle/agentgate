@@ -15,18 +15,6 @@ diff4 encrypts diffs and files client-side (AES-256-GCM) before uploading. The s
 - `diff4` must be installed and available on PATH. Use `npm i -g @diff4/cli` to install.
 - A passphrase must be configured (see setup below)
 
-## Setup (first time)
-
-```
-diff4 key-gen
-```
-
-Generates a random key and writes `export DIFF4_PASSPHRASE="<key>"` to the user's shell config (~/.zshrc, ~/.bashrc, or ~/.profile). After running, tell the user to run `source ~/.zshrc` (or the appropriate rc file) to load the key.
-
-To check the current key: `diff4 key-get`
-
-To generate with a custom key: `diff4 key-gen mysecretkey`
-
 ## Commands
 
 ### Share the latest commit diff
