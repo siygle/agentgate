@@ -4,7 +4,6 @@ description: Create shareable encrypted file bundles via the REST API.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
 ## Overview
@@ -19,115 +18,6 @@ The Files API lets you create an end-to-end encrypted file bundle from a set of 
   All file content is **end-to-end encrypted** using AES-256-GCM. The server only stores the encrypted blob and cannot read the content. Viewers must enter the correct passphrase to decrypt.
 </Callout>
 
-## Encryption
-
-All payloads are encrypted client-side using **AES-256-GCM** with a **PBKDF2**-derived key before being sent to the API.
-
-| Parameter | Value |
-|-----------|-------|
-| Algorithm | AES-256-GCM |
-| Key Derivation | PBKDF2-SHA256, 600,000 iterations |
-| Salt | Random 16 bytes (base64) |
-| IV | Random 12 bytes (base64) |
-
-The plaintext to encrypt is a JSON object containing a `files` array:
-
-```json
-{
-  "files": [
-    {
-      "title": "src/auth.ts",
-      "content": "export function login(token: string) {\n  ...\n}"
-    }
-  ]
-}
-```
-
-### Encryption Example
-
-<Tabs items={['JavaScript / TypeScript', 'Python']}>
-  <Tab value="JavaScript / TypeScript">
-
-```ts
-const PBKDF2_ITERATIONS = 600_000;
-
-async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(passphrase),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"],
-  );
-}
-
-function toBase64(buffer: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-}
-
-async function encryptFiles(plaintext: string, passphrase: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(passphrase, salt);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    new TextEncoder().encode(plaintext),
-  );
-  return {
-    ciphertext: toBase64(ciphertext),
-    iv: toBase64(iv.buffer as ArrayBuffer),
-    salt: toBase64(salt.buffer as ArrayBuffer),
-  };
-}
-```
-
-  </Tab>
-  <Tab value="Python">
-
-```python
-import base64
-import hashlib
-import os
-
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-PBKDF2_ITERATIONS = 600_000
-
-
-def encrypt_files(plaintext: str, passphrase: str) -> dict:
-    salt = os.urandom(16)
-    iv = os.urandom(12)
-
-    key = hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, PBKDF2_ITERATIONS, dklen=32)
-    aesgcm = AESGCM(key)
-    ciphertext = aesgcm.encrypt(iv, plaintext.encode(), None)
-
-    return {
-        "ciphertext": base64.b64encode(ciphertext).decode(),
-        "iv": base64.b64encode(iv).decode(),
-        "salt": base64.b64encode(salt).decode(),
-    }
-
-
-# Usage:
-# payload = json.dumps({"files": [{"title": "...", "content": "..."}]})
-# encrypted = encrypt_files(payload, "my-passphrase")
-# Then POST { "encrypted_data": encrypted } to /api/files
-```
-
-Requires the `cryptography` package: `pip install cryptography`
-
-  </Tab>
-</Tabs>
-
 ## Quick Start
 
 <Steps>
@@ -135,7 +25,7 @@ Requires the `cryptography` package: `pip install cryptography`
 
 ### Encrypt your file data
 
-Encrypt the `{ files }` JSON using the encryption function above with your chosen passphrase:
+Encrypt the `{ files }` JSON using the [encryption function](/docs/api-encryption) with your chosen passphrase:
 
 ```ts
 const plaintext = JSON.stringify({
@@ -160,7 +50,7 @@ const encrypted = await encryptFiles(plaintext, "my-secret-passphrase");
 ### Send the encrypted payload
 
 ```bash title="cURL"
-curl -X POST https://your-domain.com/api/files \
+curl -X POST https://diff4.com/api/files \
   -H "Content-Type: application/json" \
   -d '{
     "encrypted_data": {
@@ -181,7 +71,7 @@ curl -X POST https://your-domain.com/api/files \
   "success": true,
   "data": {
     "id": "B7KM2P",
-    "preview_url": "https://your-domain.com/f/B7KM2P"
+    "preview_url": "https://diff4.com/f/B7KM2P"
   }
 }
 ```
@@ -228,7 +118,7 @@ Send a JSON object with the following field:
   "success": true,
   "data": {
     "id": "B7KM2P",
-    "preview_url": "https://your-domain.com/f/B7KM2P"
+    "preview_url": "https://diff4.com/f/B7KM2P"
   }
 }
 ```

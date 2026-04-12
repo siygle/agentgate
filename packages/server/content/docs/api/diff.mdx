@@ -4,7 +4,6 @@ description: Create shareable diff previews via the REST API.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
 ## Overview
@@ -19,117 +18,6 @@ The Diff API lets you create an end-to-end encrypted diff preview from a set of 
   All diff content is **end-to-end encrypted** using AES-256-GCM. The server only stores the encrypted blob and cannot read the content. Viewers must enter the correct passphrase to decrypt.
 </Callout>
 
-## Encryption
-
-All payloads are encrypted client-side using **AES-256-GCM** with a **PBKDF2**-derived key before being sent to the API.
-
-| Parameter | Value |
-|-----------|-------|
-| Algorithm | AES-256-GCM |
-| Key Derivation | PBKDF2-SHA256, 600,000 iterations |
-| Salt | Random 16 bytes (base64) |
-| IV | Random 12 bytes (base64) |
-
-The plaintext to encrypt is a JSON object containing `title` and `files`:
-
-```json
-{
-  "title": "Fix login bug",
-  "files": [
-    {
-      "filename": "src/auth.ts",
-      "language": "typescript",
-      "patch": "@@ -1,3 +1,4 @@\n..."
-    }
-  ]
-}
-```
-
-### Encryption Example
-
-<Tabs items={['JavaScript / TypeScript', 'Python']}>
-  <Tab value="JavaScript / TypeScript">
-
-```ts
-const PBKDF2_ITERATIONS = 600_000;
-
-async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(passphrase),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"],
-  );
-}
-
-function toBase64(buffer: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-}
-
-async function encryptDiff(plaintext: string, passphrase: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(passphrase, salt);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    new TextEncoder().encode(plaintext),
-  );
-  return {
-    ciphertext: toBase64(ciphertext),
-    iv: toBase64(iv.buffer as ArrayBuffer),
-    salt: toBase64(salt.buffer as ArrayBuffer),
-  };
-}
-```
-
-  </Tab>
-  <Tab value="Python">
-
-```python
-import base64
-import hashlib
-import os
-
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-PBKDF2_ITERATIONS = 600_000
-
-
-def encrypt_diff(plaintext: str, passphrase: str) -> dict:
-    salt = os.urandom(16)
-    iv = os.urandom(12)
-
-    key = hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, PBKDF2_ITERATIONS, dklen=32)
-    aesgcm = AESGCM(key)
-    ciphertext = aesgcm.encrypt(iv, plaintext.encode(), None)
-
-    return {
-        "ciphertext": base64.b64encode(ciphertext).decode(),
-        "iv": base64.b64encode(iv).decode(),
-        "salt": base64.b64encode(salt).decode(),
-    }
-
-
-# Usage:
-# payload = json.dumps({"title": "...", "files": [...]})
-# encrypted = encrypt_diff(payload, "my-passphrase")
-# Then POST { "encrypted_data": encrypted } to /api/diff
-```
-
-Requires the `cryptography` package: `pip install cryptography`
-
-  </Tab>
-</Tabs>
-
 ## Quick Start
 
 <Steps>
@@ -137,7 +25,7 @@ Requires the `cryptography` package: `pip install cryptography`
 
 ### Encrypt your diff data
 
-Encrypt the `{ title, files }` JSON using the encryption function above with your chosen passphrase:
+Encrypt the `{ title, files }` JSON using the [encryption function](/docs/api-encryption) with your chosen passphrase:
 
 ```ts
 const plaintext = JSON.stringify({
@@ -160,7 +48,7 @@ const encrypted = await encryptDiff(plaintext, "my-secret-passphrase");
 ### Send the encrypted payload
 
 ```bash title="cURL"
-curl -X POST https://your-domain.com/api/diff \
+curl -X POST https://diff4.com/api/diff \
   -H "Content-Type: application/json" \
   -d '{
     "encrypted_data": {
@@ -181,7 +69,7 @@ curl -X POST https://your-domain.com/api/diff \
   "success": true,
   "data": {
     "id": "A3KX9M",
-    "preview_url": "https://your-domain.com/p/A3KX9M"
+    "preview_url": "https://diff4.com/p/A3KX9M"
   }
 }
 ```
@@ -228,7 +116,7 @@ Send a JSON object with the following field:
   "success": true,
   "data": {
     "id": "A3KX9M",
-    "preview_url": "https://your-domain.com/p/A3KX9M"
+    "preview_url": "https://diff4.com/p/A3KX9M"
   }
 }
 ```

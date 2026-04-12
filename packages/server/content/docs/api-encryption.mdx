@@ -1,0 +1,138 @@
+---
+title: Encryption
+description: End-to-end encryption reference for the Diff and Files APIs.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+All payloads sent to the Diff and Files APIs are encrypted client-side using **AES-256-GCM** with a **PBKDF2**-derived key. The server only stores the encrypted blob and cannot read the content. Viewers must enter the correct passphrase to decrypt.
+
+## Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Algorithm | AES-256-GCM |
+| Key Derivation | PBKDF2-SHA256, 600,000 iterations |
+| Salt | Random 16 bytes (base64) |
+| IV | Random 12 bytes (base64) |
+
+## Plaintext Format
+
+### Diff API
+
+The plaintext to encrypt is a JSON object containing `title` and `files`:
+
+```json
+{
+  "title": "Fix login bug",
+  "files": [
+    {
+      "filename": "src/auth.ts",
+      "language": "typescript",
+      "patch": "@@ -1,3 +1,4 @@\n..."
+    }
+  ]
+}
+```
+
+### Files API
+
+The plaintext to encrypt is a JSON object containing a `files` array:
+
+```json
+{
+  "files": [
+    {
+      "title": "src/auth.ts",
+      "content": "export function login(token: string) {\n  ...\n}"
+    }
+  ]
+}
+```
+
+## Encryption Example
+
+<Tabs items={['JavaScript / TypeScript', 'Python']}>
+  <Tab value="JavaScript / TypeScript">
+
+```ts
+const PBKDF2_ITERATIONS = 600_000;
+
+async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+}
+
+function toBase64(buffer: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+async function encrypt(plaintext: string, passphrase: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(passphrase, salt);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(plaintext),
+  );
+  return {
+    ciphertext: toBase64(ciphertext),
+    iv: toBase64(iv.buffer as ArrayBuffer),
+    salt: toBase64(salt.buffer as ArrayBuffer),
+  };
+}
+```
+
+  </Tab>
+  <Tab value="Python">
+
+```python
+import base64
+import hashlib
+import os
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+PBKDF2_ITERATIONS = 600_000
+
+
+def encrypt(plaintext: str, passphrase: str) -> dict:
+    salt = os.urandom(16)
+    iv = os.urandom(12)
+
+    key = hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, PBKDF2_ITERATIONS, dklen=32)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(iv, plaintext.encode(), None)
+
+    return {
+        "ciphertext": base64.b64encode(ciphertext).decode(),
+        "iv": base64.b64encode(iv).decode(),
+        "salt": base64.b64encode(salt).decode(),
+    }
+
+
+# Usage:
+# payload = json.dumps({"title": "...", "files": [...]})
+# encrypted = encrypt(payload, "my-passphrase")
+# Then POST { "encrypted_data": encrypted } to /api/diff or /api/files
+```
+
+Requires the `cryptography` package: `pip install cryptography`
+
+  </Tab>
+</Tabs>
