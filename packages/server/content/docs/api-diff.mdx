@@ -1,0 +1,139 @@
+---
+title: Diff API
+description: Create shareable diff previews via the REST API.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+## Overview
+
+The Diff API lets you create a diff preview from a set of file patches. Each diff is assigned a short, shareable ID and a preview URL.
+
+<Callout type="warn">
+  Diffs automatically expire after **24 hours** and are no longer accessible after that.
+</Callout>
+
+## Quick Start
+
+<Steps>
+<Step>
+
+### Send a request
+
+```bash title="cURL"
+curl -X POST https://your-domain.com/api/diff \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Fix login bug",
+    "files": [
+      {
+        "filename": "src/auth.ts",
+        "language": "typescript",
+        "patch": "@@ -1,5 +1,6 @@\n import { validate } from \"./validator\";\n \n-export function login(token: string) {\n+export function login(token: string, retry = false) {\n   const user = validate(token);\n-  return user;\n+  if (!user && retry) throw new Error(\"retry failed\");\n+  return user;\n }"
+      }
+    ]
+  }'
+```
+
+</Step>
+<Step>
+
+### Get your preview URL
+
+```json title="Response"
+{
+  "success": true,
+  "data": {
+    "id": "A3KX9M",
+    "preview_url": "https://your-domain.com/p/A3KX9M"
+  }
+}
+```
+
+</Step>
+<Step>
+
+### Share the link
+
+Open `preview_url` in any browser to view the rendered diff. No authentication required.
+
+</Step>
+</Steps>
+
+## Endpoint
+
+```
+POST /api/diff
+```
+
+## Request Body
+
+Send a JSON object with the following fields:
+
+| Field   | Type     | Required | Description                       |
+| ------- | -------- | -------- | --------------------------------- |
+| `title` | `string` | Yes      | A title for the diff preview      |
+| `files` | `array`  | Yes      | List of file entries (at least 1) |
+
+### File Entry
+
+Each item in the `files` array:
+
+| Field      | Type     | Required | Description                              |
+| ---------- | -------- | -------- | ---------------------------------------- |
+| `filename` | `string` | Yes      | The file name or path                    |
+| `language` | `string` | No       | Language identifier for syntax highlighting |
+| `patch`    | `string` | Yes      | The unified diff patch content           |
+
+## Responses
+
+<Tabs items={['201 Success', '400 Validation', '500 Server Error']}>
+  <Tab value="201 Success">
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "A3KX9M",
+    "preview_url": "https://your-domain.com/p/A3KX9M"
+  }
+}
+```
+
+| Field         | Type     | Description                       |
+| ------------- | -------- | --------------------------------- |
+| `id`          | `string` | 6-character ID for the diff       |
+| `preview_url` | `string` | Full URL to view the diff preview |
+
+  </Tab>
+  <Tab value="400 Validation">
+
+Returned when required fields are missing or invalid.
+
+```json
+{
+  "success": false,
+  "error": "title must be a string, files must contain at least 1 element"
+}
+```
+
+  </Tab>
+  <Tab value="500 Server Error">
+
+```json
+{
+  "success": false,
+  "error": "Internal server error"
+}
+```
+
+  </Tab>
+</Tabs>
+
+## Notes
+
+- The `patch` field should follow the **unified diff** format for best rendering results.
+- The `language` field is optional but recommended for proper syntax highlighting.
+- No authentication is required to create or view diffs.

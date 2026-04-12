@@ -1,0 +1,28 @@
+---
+title: Documentation
+description: API references and guides for the diff4 platform.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { CodeIcon } from 'lucide-react';
+
+Welcome to the diff4 documentation. Use the sidebar to navigate.
+
+## APIs
+
+<Cards>
+  <Card
+    href="/docs/api-diff"
+    title="Diff API"
+    icon={<CodeIcon />}
+  >
+    Create shareable diff previews from file patches. Auto-expires after 24 hours.
+  </Card>
+  <Card
+    href="/docs/agent-skills"
+    title="Agent Skills"
+    icon={<CodeIcon />}
+  >
+    Scenario skills for AI agents to use diff4 proactively.
+  </Card>
+</Cards>

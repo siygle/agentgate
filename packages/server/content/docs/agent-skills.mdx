@@ -1,0 +1,58 @@
+---
+title: Agent Skills
+description: Scenario skills for AI agents to use diff4 proactively.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+AI agents can use diff4 to create visual diff previews automatically. These skills follow the [Agent Skills specification](https://agentskills.io/specification) and live in the `skills/` directory at the repo root.
+
+<Callout>
+  All skills share the same core flow: **generate a unified diff** → **POST to `/api/diff`** → **share the preview URL**. Diffs expire after 24 hours.
+</Callout>
+
+## Installation
+
+Place the skill folders in your agent's skills directory (e.g., `.agents/skills/` for Claude Code or VS Code Copilot). Each skill is a folder containing a `SKILL.md`:
+
+```
+skills/
+├── show-commit-diff/
+│   └── SKILL.md
+├── show-working-changes/
+│   └── SKILL.md
+├── compare-branches/
+│   └── SKILL.md
+└── share-for-review/
+    └── SKILL.md
+```
+
+## Skills Overview
+
+### show-commit-diff
+
+Create a diff4 preview of the latest git commit. Runs `git diff HEAD^..HEAD`, posts the patch to `/api/diff`, and returns a shareable preview URL.
+
+**Triggers**: "show the diff", "show commit diff", "use diff4".
+
+### show-working-changes
+
+Create a diff4 preview of uncommitted changes. Collects both staged (`git diff --cached`) and unstaged (`git diff`) changes as separate file entries.
+
+**Triggers**: "preview my changes", "show working diff", "show unstaged changes".
+
+### compare-branches
+
+Create a diff4 preview comparing two git branches. Runs `git diff base..head` and posts the result.
+
+**Triggers**: "compare branches", "diff main and feature", "show branch diff".
+
+### share-for-review
+
+Create a diff4 preview of specific file changes for code review. Supports scoped file paths via `git diff -- file1 file2`.
+
+**Triggers**: "share for review", "create a diff preview", "share this change".
+
+## API Reference
+
+See [Diff API](/docs/api-diff) for the full endpoint documentation.
