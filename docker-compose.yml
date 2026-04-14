@@ -1,32 +1,12 @@
 services:
-  render4:
-    image: postgres:16-alpine
+  diffmini:
+    build: .
     ports:
-      - "59876:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: render4
+      - "8080:8080"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  server:
-    build:
-      context: ./packages/server
-      dockerfile: Dockerfile
-    expose:
-      - "3000"
+      - data:/data
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@render4:5432/render4
-      NEXT_PUBLIC_BASE_URL: http://localhost:3000
-    depends_on:
-      render4:
-        condition: service_healthy
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
 
 volumes:
-  pgdata:
+  data:

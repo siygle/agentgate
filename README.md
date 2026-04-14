@@ -1,61 +1,96 @@
-# diff4
+# diffmini
 
-Beautiful file previews for AI coding agents. Turn your AI agent's file changes into shareable, beautifully rendered web pages — encrypted end-to-end.
+A lightweight, self-hosted encrypted diff & file sharing tool. Rewritten in Go from [diff4](https://github.com/djyde/diff4).
+
+Single binary, SQLite storage, zero external dependencies. All content is encrypted end-to-end with AES-256-GCM — the server never sees plaintext.
 
 ## How it works
 
 1. **Encrypt locally** — diffs and files are encrypted with AES-256-GCM on your machine before upload. The server never sees plaintext.
-2. **Share a link** — get a URL like `diff4.com/p/abc123`. Recipients need the passphrase to decrypt.
+2. **Share a link** — get a URL like `your-server.com/p/ABC123`. Recipients need the passphrase to decrypt.
 3. **Auto-expiry** — all content expires after 24 hours.
-
-## Install
-
-### For Agent
-
-Copy this prompt to your agent (OpenClaw, Hermes Agent, etc)
-
-```bash
-Referencing https://diff4.com/docs/cli, help me write a skill that uses diff4.
-```
-
-### For Human
-
-```bash
-# Install the CLI
-npm install -g @diff4/cli
-
-# Or use with AI agents
-npx skills add djyde/diff4
-```
 
 ## Quick start
 
+### Run the server
+
+```bash
+# Single binary
+./diffmini-server --port 8080 --base-url https://your-domain.com
+
+# Or with Docker
+docker compose up -d
+```
+
+### Use the CLI
+
 ```bash
 # Set up encryption key (first time only)
-diff4 key-gen
+diffmini key-gen
 source ~/.zshrc   # or ~/.bashrc
 
 # Share your latest commit diff
-diff4 git-latest
+diffmini git-latest
 
 # Share staged changes
-diff4 git-staged
+diffmini git-staged
 
 # Share arbitrary files
-diff4 files src/foo.ts src/bar.ts
+diffmini files src/foo.ts src/bar.ts
 ```
 
 ## CLI commands
 
 | Command | Description |
 |---------|-------------|
-| `diff4 key-gen [key]` | Generate or set encryption passphrase |
-| `diff4 key-get` | Print current passphrase |
-| `diff4 git-latest` | Encrypt & share the latest commit diff |
-| `diff4 git-staged` | Encrypt & share staged changes |
-| `diff4 files <paths...>` | Encrypt & share file contents |
+| `diffmini key-gen [key]` | Generate or set encryption passphrase |
+| `diffmini key-get` | Print current passphrase |
+| `diffmini git-latest` | Encrypt & share the latest commit diff |
+| `diffmini git-staged` | Encrypt & share staged changes |
+| `diffmini files <paths...>` | Encrypt & share file contents |
 
 All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` flags.
+
+## Server options
+
+| Flag | Env | Default | Description |
+|------|-----|---------|-------------|
+| `--port` | `PORT` | `8080` | HTTP port |
+| `--db` | `DATABASE_PATH` | `./diffmini.db` | SQLite database path |
+| `--base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL for shared links |
+
+## Deployment
+
+### Docker Compose
+
+```yaml
+services:
+  diffmini:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - data:/data
+    environment:
+      BASE_URL: https://your-domain.com
+
+volumes:
+  data:
+```
+
+### systemd
+
+```ini
+[Unit]
+Description=diffmini server
+
+[Service]
+ExecStart=/usr/local/bin/diffmini-server --db /var/lib/diffmini/diffmini.db --base-url https://your-domain.com
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Security
 
@@ -63,56 +98,41 @@ All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` fla
 - **PBKDF2-SHA256** key derivation with 600,000 iterations
 - Client-side encryption only — the server stores ciphertext
 - Passphrase shared out-of-band by you
-
-## Self-hosting
-
-### Server
-
-```bash
-# Start PostgreSQL
-docker compose up -d
-
-# Set up the server
-cd packages/server
-pnpm install
-pnpm db:generate
-pnpm db:push
-
-# Configure .env
-# DATABASE_URL=postgresql://postgres:postgres@localhost:59876/render4
-# NEXT_PUBLIC_BASE_URL=http://localhost:3000
-
-pnpm dev
-```
-
-### CLI with custom server
-
-```bash
-# Set environment variable
-export DIFF4_SERVER=https://your-server.com
-
-# Or use the flag
-diff4 git-latest -s https://your-server.com
-```
+- All content auto-expires after 24 hours
 
 ## Tech stack
 
-- **Server** — Next.js 16, PostgreSQL 16, Prisma, Tailwind CSS v4
-- **CLI** — Bun, Commander.js, builds to standalone binaries
-- **Docs** — fumadocs with MDX
+- **Server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
+- **CLI** — Go, cross-compiled to single binaries
+- **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js
 
-## Monorepo structure
+## Project structure
 
 ```
-packages/server/   Next.js app (pnpm)
-packages/cli/      CLI tool @diff4/cli (Bun)
-skills/diff4/      OpenCode skill definition
+cmd/server/        Server entry point
+cmd/cli/           CLI entry point
+internal/server/   HTTP handlers, router, middleware
+internal/db/       SQLite database layer
+internal/crypto/   AES-256-GCM encryption
+internal/id/       ID generation
+internal/cleanup/  Expired content cleanup
+web/templates/     HTML templates
+web/static/        CSS, JS, vendor libraries
 ```
 
-## Release
+## Building from source
 
-Git tags (`v*`) trigger `.github/workflows/release.yml` which builds CLI binaries and attaches them to a GitHub Release.
+```bash
+# Build both binaries
+make build
 
-## Author
+# Cross-compile for all platforms
+make release
 
-Made by [Randy Lu](https://x.com/randyloop)
+# Build Docker image
+make docker
+```
+
+## Credits
+
+Rewritten in Go from [diff4](https://github.com/djyde/diff4) by [Randy Lu](https://x.com/randyloop). The original project is built with Next.js, PostgreSQL, and Prisma. This rewrite replaces the stack with Go + SQLite for a lighter, single-binary self-hosted deployment.

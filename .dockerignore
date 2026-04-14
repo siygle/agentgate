@@ -1,0 +1,6 @@
+bin/
+packages/
+node_modules/
+.git/
+*.db
+.context/
