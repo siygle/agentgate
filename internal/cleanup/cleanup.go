@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/diffmini/diffmini/internal/db"
+	"github.com/siygle/agentgate/internal/db"
 )
 
 // Start launches a background goroutine that periodically deletes expired

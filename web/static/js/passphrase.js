@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var STORAGE_KEY = "diffmini-passphrase";
+  var STORAGE_KEY = "agentgate-passphrase";
 
   function getStoredPassphrase() {
     try {
@@ -124,7 +124,7 @@
     if (input) input.disabled = true;
   }
 
-  window.DiffminiPassphrase = {
+  window.AgentGatePassphrase = {
     getStoredPassphrase: getStoredPassphrase,
     storePassphrase: storePassphrase,
     clearStoredPassphrase: clearStoredPassphrase,

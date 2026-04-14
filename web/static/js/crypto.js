@@ -55,5 +55,5 @@
     });
   }
 
-  window.DiffminiCrypto = { decrypt: decrypt };
+  window.AgentGateCrypto = { decrypt: decrypt };
 })();

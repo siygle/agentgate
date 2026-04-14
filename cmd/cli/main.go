@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/diffmini/diffmini/internal/crypto"
+	"github.com/siygle/agentgate/internal/crypto"
 )
 
 const defaultServer = "http://localhost:8080"
@@ -69,7 +69,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `Usage: diffmini <command> [options]
+	fmt.Fprintln(os.Stderr, `Usage: agentgate <command> [options]
 
 Commands:
   git-latest  [-s server] [-p passphrase]   Share the latest commit diff
@@ -105,7 +105,7 @@ func resolveServer(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	if env := os.Getenv("DIFFMINI_SERVER"); env != "" {
+	if env := os.Getenv("AGENTGATE_SERVER"); env != "" {
 		return env
 	}
 	return defaultServer
@@ -115,10 +115,10 @@ func resolvePassphrase(flag string) (string, error) {
 	if flag != "" {
 		return flag, nil
 	}
-	if env := os.Getenv("DIFFMINI_PASSPHRASE"); env != "" {
+	if env := os.Getenv("AGENTGATE_PASSPHRASE"); env != "" {
 		return env, nil
 	}
-	return "", fmt.Errorf("passphrase required: use -p flag or set DIFFMINI_PASSPHRASE")
+	return "", fmt.Errorf("passphrase required: use -p flag or set AGENTGATE_PASSPHRASE")
 }
 
 // runGit executes a git command and returns its stdout.
@@ -298,7 +298,7 @@ func runKeyGen(args []string) {
 	}
 
 	rcFile := shellRCFile()
-	line := fmt.Sprintf("export DIFFMINI_PASSPHRASE=\"%s\"", key)
+	line := fmt.Sprintf("export AGENTGATE_PASSPHRASE=\"%s\"", key)
 
 	// Append to rc file.
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -319,9 +319,9 @@ func runKeyGen(args []string) {
 }
 
 func runKeyGet() {
-	key := os.Getenv("DIFFMINI_PASSPHRASE")
+	key := os.Getenv("AGENTGATE_PASSPHRASE")
 	if key == "" {
-		fmt.Fprintln(os.Stderr, "DIFFMINI_PASSPHRASE is not set")
+		fmt.Fprintln(os.Stderr, "AGENTGATE_PASSPHRASE is not set")
 		os.Exit(1)
 	}
 	fmt.Println(key)

@@ -49,7 +49,7 @@
     });
   }
 
-  window.DiffminiMarkdown = {
+  window.AgentGateMarkdown = {
     isMarkdown: isMarkdown,
     stripFrontmatter: stripFrontmatter,
     renderMarkdown: renderMarkdown,

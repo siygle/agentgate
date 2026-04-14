@@ -12,15 +12,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/diffmini/diffmini/internal/cleanup"
-	"github.com/diffmini/diffmini/internal/db"
-	"github.com/diffmini/diffmini/internal/server"
-	"github.com/diffmini/diffmini/web"
+	"github.com/siygle/agentgate/internal/cleanup"
+	"github.com/siygle/agentgate/internal/db"
+	"github.com/siygle/agentgate/internal/server"
+	"github.com/siygle/agentgate/web"
 )
 
 func main() {
 	port := flag.Int("port", envOrDefaultInt("PORT", 8080), "HTTP port")
-	dbPath := flag.String("db", envOrDefault("DATABASE_PATH", "./diffmini.db"), "SQLite database path")
+	dbPath := flag.String("db", envOrDefault("DATABASE_PATH", "./agentgate.db"), "SQLite database path")
 	baseURL := flag.String("base-url", envOrDefault("BASE_URL", "http://localhost:8080"), "Public base URL")
 	flag.Parse()
 

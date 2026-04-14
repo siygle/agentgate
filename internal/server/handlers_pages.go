@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/diffmini/diffmini/internal/db"
+	"github.com/siygle/agentgate/internal/db"
 	"github.com/go-chi/chi/v5"
 )
 

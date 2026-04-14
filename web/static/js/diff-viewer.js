@@ -459,10 +459,10 @@
     var encrypted = getEncryptedData();
     if (!encrypted) return;
 
-    var P = window.DiffminiPassphrase;
+    var P = window.AgentGatePassphrase;
     if (P) P.showDecryptingState();
 
-    window.DiffminiCrypto
+    window.AgentGateCrypto
       .decrypt(
         encrypted.ciphertext,
         encrypted.iv,
@@ -491,7 +491,7 @@
     var encrypted = getEncryptedData();
     if (!encrypted) return;
 
-    var P = window.DiffminiPassphrase;
+    var P = window.AgentGatePassphrase;
     if (!P) return;
 
     var stored = P.getStoredPassphrase();

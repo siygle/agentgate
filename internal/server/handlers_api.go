@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/diffmini/diffmini/internal/db"
-	"github.com/diffmini/diffmini/internal/id"
+	"github.com/siygle/agentgate/internal/db"
+	"github.com/siygle/agentgate/internal/id"
 )
 
 // createRequest is the JSON body for both diff and file-bundle creation.

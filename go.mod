@@ -1,4 +1,4 @@
-module github.com/siygle/diff4
+module github.com/siygle/agentgate
 
 go 1.26.2
 

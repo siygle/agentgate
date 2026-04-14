@@ -1,4 +1,4 @@
-# diffmini
+# AgentGate
 
 A lightweight, self-hosted encrypted diff & file sharing tool. Rewritten in Go from [diff4](https://github.com/djyde/diff4).
 
@@ -16,7 +16,7 @@ Single binary, SQLite storage, zero external dependencies. All content is encryp
 
 ```bash
 # Single binary
-./diffmini-server --port 8080 --base-url https://your-domain.com
+./agentgate-server --port 8080 --base-url https://your-domain.com
 
 # Or with Docker
 docker compose up -d
@@ -26,28 +26,28 @@ docker compose up -d
 
 ```bash
 # Set up encryption key (first time only)
-diffmini key-gen
+agentgate key-gen
 source ~/.zshrc   # or ~/.bashrc
 
 # Share your latest commit diff
-diffmini git-latest
+agentgate git-latest
 
 # Share staged changes
-diffmini git-staged
+agentgate git-staged
 
 # Share arbitrary files
-diffmini files src/foo.ts src/bar.ts
+agentgate files src/foo.ts src/bar.ts
 ```
 
 ## CLI commands
 
 | Command | Description |
 |---------|-------------|
-| `diffmini key-gen [key]` | Generate or set encryption passphrase |
-| `diffmini key-get` | Print current passphrase |
-| `diffmini git-latest` | Encrypt & share the latest commit diff |
-| `diffmini git-staged` | Encrypt & share staged changes |
-| `diffmini files <paths...>` | Encrypt & share file contents |
+| `agentgate key-gen [key]` | Generate or set encryption passphrase |
+| `agentgate key-get` | Print current passphrase |
+| `agentgate git-latest` | Encrypt & share the latest commit diff |
+| `agentgate git-staged` | Encrypt & share staged changes |
+| `agentgate files <paths...>` | Encrypt & share file contents |
 
 All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` flags.
 
@@ -56,7 +56,7 @@ All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` fla
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
 | `--port` | `PORT` | `8080` | HTTP port |
-| `--db` | `DATABASE_PATH` | `./diffmini.db` | SQLite database path |
+| `--db` | `DATABASE_PATH` | `./agentgate.db` | SQLite database path |
 | `--base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL for shared links |
 
 ## Deployment
@@ -65,7 +65,7 @@ All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` fla
 
 ```yaml
 services:
-  diffmini:
+  agentgate:
     build: .
     ports:
       - "8080:8080"
@@ -82,10 +82,10 @@ volumes:
 
 ```ini
 [Unit]
-Description=diffmini server
+Description=AgentGate server
 
 [Service]
-ExecStart=/usr/local/bin/diffmini-server --db /var/lib/diffmini/diffmini.db --base-url https://your-domain.com
+ExecStart=/usr/local/bin/agentgate-server --db /var/lib/agentgate/agentgate.db --base-url https://your-domain.com
 Restart=always
 
 [Install]
