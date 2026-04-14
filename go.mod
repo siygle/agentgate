@@ -1,4 +1,4 @@
-module github.com/diffmini/diffmini
+module github.com/siygle/diff4
 
 go 1.26.2
 
