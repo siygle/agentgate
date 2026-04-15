@@ -5,8 +5,20 @@
   <header class="landing-header">
     <div class="container">
       <a href="/" class="landing-logo">AgentGate</a>
+      <button class="btn" onclick="openSetupModal()">Agent Setup</button>
     </div>
   </header>
+
+  <div id="setup-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeSetupModal()">
+    <div class="modal setup-modal">
+      <div class="setup-modal-header">
+        <h2>Agent Setup Instructions</h2>
+        <button class="btn" id="setup-copy-btn" onclick="copySetup()">Copy</button>
+      </div>
+      <p>Copy and paste to your AI agent to generate a skill for AgentGate CLI.</p>
+      <pre class="setup-modal-content" id="setup-content"></pre>
+    </div>
+  </div>
 
   <section class="landing-hero">
     <div class="container">
@@ -59,7 +71,10 @@ go install github.com/siygle/agentgate/cmd/cli@latest
   <section class="landing-section">
     <div class="container">
       <h2>CLI usage</h2>
-      <div class="landing-code"># Set up encryption key
+      <div class="landing-code"># Configure your server (required)
+export AGENTGATE_SERVER=https://your-domain.com
+
+# Set up encryption key
 agentgate key-gen
 source ~/.zshrc
 
@@ -70,10 +85,7 @@ agentgate git-latest
 agentgate git-staged
 
 # Share files
-agentgate files path/to/file.ts
-
-# Use with your own server
-agentgate git-latest -s https://your-domain.com</div>
+agentgate files path/to/file.ts</div>
     </div>
   </section>
 
@@ -83,6 +95,87 @@ agentgate git-latest -s https://your-domain.com</div>
     </div>
   </footer>
 </div>
+{{end}}
+
+{{define "head"}}
+<style>
+.setup-modal { max-width: 40rem; }
+.setup-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.setup-modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 60vh;
+  margin: 0;
+  color: var(--fg);
+}
+</style>
+{{end}}
+
+{{define "scripts"}}
+<script>
+function getSetupText() {
+  var origin = window.location.origin;
+  return [
+    "# AgentGate CLI Setup",
+    "#",
+    "# AgentGate is an encrypted diff & file sharing tool.",
+    "# CLI encrypts content client-side and uploads to the server.",
+    "",
+    "# 1. Install CLI",
+    "go install github.com/siygle/agentgate/cmd/cli@latest",
+    "",
+    "# 2. Configure server URL (required)",
+    "# Add to your shell profile (~/.zshrc or ~/.bashrc):",
+    "export AGENTGATE_SERVER=" + origin,
+    "",
+    "# 3. Generate encryption passphrase",
+    "agentgate key-gen",
+    "source ~/.zshrc  # or ~/.bashrc",
+    "",
+    "# 4. Usage",
+    "agentgate git-latest              # Share latest commit diff",
+    "agentgate git-staged              # Share staged changes",
+    "agentgate files path/to/file.ts   # Share files",
+    "",
+    "# Environment variables:",
+    "# AGENTGATE_SERVER     - Server URL (required, no default)",
+    "# AGENTGATE_PASSPHRASE - Encryption passphrase",
+    "",
+    "# Flags: -s <server> -p <passphrase> override env vars"
+  ].join("\n");
+}
+
+function openSetupModal() {
+  document.getElementById("setup-content").textContent = getSetupText();
+  document.getElementById("setup-modal").style.display = "flex";
+  document.getElementById("setup-copy-btn").textContent = "Copy";
+}
+
+function closeSetupModal() {
+  document.getElementById("setup-modal").style.display = "none";
+}
+
+function copySetup() {
+  var text = getSetupText();
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.getElementById("setup-copy-btn");
+    btn.textContent = "Copied!";
+    setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+  });
+}
+
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") closeSetupModal();
+});
+</script>
 {{end}}
 
 {{template "layout" .}}

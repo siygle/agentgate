@@ -25,6 +25,9 @@ docker compose up -d
 ### Use the CLI
 
 ```bash
+# Set your server URL (required)
+export AGENTGATE_SERVER=https://your-domain.com
+
 # Set up encryption key (first time only)
 agentgate key-gen
 source ~/.zshrc   # or ~/.bashrc
@@ -50,6 +53,13 @@ agentgate files src/foo.ts src/bar.ts
 | `agentgate files <paths...>` | Encrypt & share file contents |
 
 All upload commands accept `-s, --server <url>` and `-p, --passphrase <key>` flags.
+
+## CLI environment variables
+
+| Env | Flag | Description |
+|-----|------|-------------|
+| `AGENTGATE_SERVER` | `-s, --server` | Server URL (required) |
+| `AGENTGATE_PASSPHRASE` | `-p, --passphrase` | Encryption passphrase |
 
 ## Server options
 
