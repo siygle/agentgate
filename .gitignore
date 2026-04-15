@@ -1,0 +1,12 @@
+# Build output
+bin/
+cli
+server
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store

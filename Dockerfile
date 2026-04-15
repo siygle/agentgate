@@ -6,7 +6,7 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 go build -o /agentgate-server ./cmd/server
-RUN CGO_ENABLED=0 go build -o /agentgate-cli ./cmd/cli
+RUN CGO_ENABLED=0 go build -o /agentgate-cli ./cmd/agentgate
 
 FROM alpine:3.20
 
