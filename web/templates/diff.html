@@ -1,0 +1,22 @@
+{{define "title"}}Diff - AgentGate{{end}}
+
+{{define "head"}}
+  <link rel="stylesheet" href="/static/vendor/diff2html.min.css">
+  <link rel="stylesheet" href="/static/vendor/highlight-github.min.css">
+  <link rel="stylesheet" href="/static/vendor/highlight-github-dark.min.css" media="(prefers-color-scheme: dark)">
+{{end}}
+
+{{define "body"}}
+<div id="encrypted-data" data-value="{{.EncryptedData}}" style="display:none"></div>
+<div id="expires-at" data-value="{{.ExpiresAt}}" style="display:none"></div>
+
+<div id="app"></div>
+
+<script src="/static/vendor/highlight.min.js"></script>
+<script src="/static/vendor/diff2html.min.js"></script>
+<script src="/static/js/crypto.js"></script>
+<script src="/static/js/passphrase.js"></script>
+<script src="/static/js/diff-viewer.js"></script>
+{{end}}
+
+{{template "layout" .}}

@@ -1,0 +1,88 @@
+{{define "title"}}AgentGate - Encrypted diff &amp; file sharing{{end}}
+
+{{define "body"}}
+<div class="landing">
+  <header class="landing-header">
+    <div class="container">
+      <a href="/" class="landing-logo">AgentGate</a>
+    </div>
+  </header>
+
+  <section class="landing-hero">
+    <div class="container">
+      <h1>AgentGate</h1>
+      <p>Self-hosted encrypted diff &amp; file sharing</p>
+    </div>
+  </section>
+
+  <section class="landing-section">
+    <div class="container">
+      <div class="landing-features">
+        <div class="feature-card">
+          <h3>End-to-end encrypted</h3>
+          <p>AES-256-GCM encryption. Zero-knowledge architecture -- the server never sees your content.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Auto-expiry</h3>
+          <p>All shared content expires after 24 hours. Nothing lingers.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Lightweight</h3>
+          <p>Single binary, SQLite storage, no external dependencies.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-section">
+    <div class="container">
+      <h2>Quick start</h2>
+      <div class="landing-code"># Download and run
+./agentgate-server --port 8080 --base-url https://your-domain.com
+
+# Or with Docker
+docker compose up -d</div>
+    </div>
+  </section>
+
+  <section class="landing-section">
+    <div class="container">
+      <h2>Install CLI</h2>
+      <div class="landing-code"># Install with go install
+go install github.com/siygle/agentgate/cmd/cli@latest
+
+# Or download a prebuilt binary from GitHub Releases
+# https://github.com/siygle/agentgate/releases</div>
+    </div>
+  </section>
+
+  <section class="landing-section">
+    <div class="container">
+      <h2>CLI usage</h2>
+      <div class="landing-code"># Set up encryption key
+agentgate key-gen
+source ~/.zshrc
+
+# Share latest commit diff
+agentgate git-latest
+
+# Share staged changes
+agentgate git-staged
+
+# Share files
+agentgate files path/to/file.ts
+
+# Use with your own server
+agentgate git-latest -s https://your-domain.com</div>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <div class="container">
+      <p>AgentGate - Encrypted sharing for code</p>
+    </div>
+  </footer>
+</div>
+{{end}}
+
+{{template "layout" .}}
