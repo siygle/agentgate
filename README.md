@@ -120,7 +120,7 @@ WantedBy=multi-user.target
 
 ```
 cmd/server/        Server entry point
-cmd/cli/           CLI entry point
+cmd/agentgate/     CLI entry point
 internal/server/   HTTP handlers, router, middleware
 internal/db/       SQLite database layer
 internal/crypto/   AES-256-GCM encryption
