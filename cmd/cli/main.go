@@ -15,7 +15,7 @@ import (
 	"github.com/siygle/agentgate/internal/crypto"
 )
 
-const defaultServer = "http://localhost:8080"
+// Server must be configured via -s flag or AGENTGATE_SERVER env var.
 
 // DiffPayload is the JSON body sent to POST /api/diff.
 type DiffPayload struct {
@@ -101,14 +101,14 @@ func parseFlags(args []string) (server, passphrase string, rest []string) {
 	return
 }
 
-func resolveServer(flag string) string {
+func resolveServer(flag string) (string, error) {
 	if flag != "" {
-		return flag
+		return flag, nil
 	}
 	if env := os.Getenv("AGENTGATE_SERVER"); env != "" {
-		return env
+		return env, nil
 	}
-	return defaultServer
+	return "", fmt.Errorf("server required: use -s flag or set AGENTGATE_SERVER")
 }
 
 func resolvePassphrase(flag string) (string, error) {
@@ -185,10 +185,12 @@ func encryptAndPost(server, endpoint string, payload any, passphrase string) {
 		os.Exit(1)
 	}
 
-	body := map[string]string{
-		"ciphertext": ciphertext,
-		"iv":         iv,
-		"salt":       salt,
+	body := map[string]any{
+		"encrypted_data": map[string]string{
+			"ciphertext": ciphertext,
+			"iv":         iv,
+			"salt":       salt,
+		},
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -206,7 +208,11 @@ func encryptAndPost(server, endpoint string, payload any, passphrase string) {
 
 func runGitLatest(args []string) {
 	serverFlag, passFlag, _ := parseFlags(args)
-	server := resolveServer(serverFlag)
+	server, err := resolveServer(serverFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	passphrase, err := resolvePassphrase(passFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -236,7 +242,11 @@ func runGitLatest(args []string) {
 
 func runGitStaged(args []string) {
 	serverFlag, passFlag, _ := parseFlags(args)
-	server := resolveServer(serverFlag)
+	server, err := resolveServer(serverFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	passphrase, err := resolvePassphrase(passFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -260,7 +270,11 @@ func runGitStaged(args []string) {
 
 func runFiles(args []string) {
 	serverFlag, passFlag, paths := parseFlags(args)
-	server := resolveServer(serverFlag)
+	server, err := resolveServer(serverFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	passphrase, err := resolvePassphrase(passFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
