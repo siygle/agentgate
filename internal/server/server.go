@@ -55,6 +55,8 @@ func New(db *sql.DB, baseURL string, templateFS, staticFS fs.FS) *Server {
 
 	// Pages
 	r.Get("/", s.handleIndex)
+	r.Get("/llms.txt", s.handleLLMsTxt)
+	r.Get("/llms-full.txt", s.handleLLMsFullTxt)
 	r.Get("/p/{id}", s.handleViewDiff)
 	r.Get("/f/{id}", s.handleViewFiles)
 

@@ -66,20 +66,41 @@
     return escapeHtml(code);
   }
 
-  function formatExpiresAt(expiresAt) {
-    if (!expiresAt) return "";
+  function formatRelativeExpiry(expiresAt) {
+    if (!expiresAt) return { text: "", isWarning: false };
     try {
-      var d = new Date(expiresAt);
-      return d.toLocaleString();
+      var now = Date.now();
+      var exp = new Date(expiresAt).getTime();
+      var diff = exp - now;
+      if (diff <= 0) return { text: "Expired", isWarning: true };
+      var minutes = Math.floor(diff / 60000);
+      var hours = Math.floor(minutes / 60);
+      var remainMinutes = minutes % 60;
+      var text;
+      if (hours > 0) {
+        text = hours + "h " + remainMinutes + "m remaining";
+      } else {
+        text = minutes + "m remaining";
+      }
+      return { text: text, isWarning: minutes < 60 };
     } catch (e) {
-      return expiresAt;
+      return { text: expiresAt, isWarning: false };
     }
   }
 
-  function filenameFromTitle(title) {
-    if (!title) return "untitled";
-    var parts = title.split("/");
-    return parts[parts.length - 1];
+  function createExpiryBadge(expiresAt) {
+    var info = formatRelativeExpiry(expiresAt);
+    var badge = document.createElement("span");
+    badge.className = "expiry-badge" + (info.isWarning ? " expiry-badge--warning" : "");
+    badge.innerHTML = '<span class="expiry-dot"></span>' + escapeHtml(info.text);
+
+    setInterval(function () {
+      var updated = formatRelativeExpiry(expiresAt);
+      badge.className = "expiry-badge" + (updated.isWarning ? " expiry-badge--warning" : "");
+      badge.innerHTML = '<span class="expiry-dot"></span>' + escapeHtml(updated.text);
+    }, 60000);
+
+    return badge;
   }
 
   function renderFileViewer(data, expiresAt) {
@@ -93,18 +114,29 @@
     var viewer = document.createElement("div");
     viewer.className = "file-viewer";
 
-    // Header
+    // Header with expiry badge and settings
     var headerEl = document.createElement("header");
     headerEl.className = "file-viewer-header";
-    headerEl.innerHTML =
-      "<span>" +
-      files.length +
-      " file" +
-      (files.length !== 1 ? "s" : "") +
-      "</span>" +
-      '<span class="text-mono text-sm">Expires ' +
-      escapeHtml(formatExpiresAt(expiresAt)) +
-      "</span>";
+
+    var headerLeft = document.createElement("div");
+    headerLeft.style.display = "flex";
+    headerLeft.style.alignItems = "center";
+    headerLeft.style.gap = "0.75rem";
+
+    var fileCount = document.createElement("span");
+    fileCount.textContent =
+      files.length + " file" + (files.length !== 1 ? "s" : "");
+    headerLeft.appendChild(fileCount);
+    headerLeft.appendChild(createExpiryBadge(expiresAt));
+
+    var headerRight = document.createElement("div");
+    headerRight.style.flexShrink = "0";
+    if (window.AgentGateSettings) {
+      window.AgentGateSettings.renderSettingsPanel(headerRight);
+    }
+
+    headerEl.appendChild(headerLeft);
+    headerEl.appendChild(headerRight);
     viewer.appendChild(headerEl);
 
     var body = document.createElement("div");
@@ -125,15 +157,11 @@
 
       contentPanel.innerHTML = "";
 
-      // File header bar
       var headerBar = document.createElement("div");
       headerBar.className = "file-header-bar";
       headerBar.innerHTML = "<span>" + escapeHtml(filename) + "</span>";
       contentPanel.appendChild(headerBar);
 
-      var showSource = true;
-
-      // Tab bar for markdown files
       if (isMd) {
         var tabBar = document.createElement("div");
         tabBar.className = "tab-bar";
@@ -197,7 +225,6 @@
       item.setAttribute("data-index", idx);
       item.addEventListener("click", function () {
         activeIndex = idx;
-        // Update active states
         sidebar
           .querySelectorAll(".file-sidebar-item")
           .forEach(function (el) {
@@ -212,7 +239,6 @@
     body.appendChild(sidebar);
     body.appendChild(contentPanel);
 
-    // Render first file
     if (files.length > 0) {
       renderDesktopContent(0);
     }
@@ -366,6 +392,10 @@
   }
 
   function init() {
+    if (window.AgentGateSettings) {
+      window.AgentGateSettings.init();
+    }
+
     var encrypted = getEncryptedData();
     if (!encrypted) return;
 

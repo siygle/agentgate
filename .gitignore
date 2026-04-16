@@ -1,7 +1,7 @@
 # Build output
 bin/
-cli
-server
+/cli
+/server
 
 # Database
 *.db
