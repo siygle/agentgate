@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  var VIEW_STORAGE_KEY = "agentgate-diff-view";
+
   var LANG_MAP = {
     ts: "typescript",
     tsx: "typescript",
@@ -101,20 +103,17 @@
     var i = 0;
 
     while (i < lines.length) {
-      // Collect consecutive deletions
       var deletions = [];
       while (i < lines.length && lines[i].type === "delete") {
         deletions.push(lines[i]);
         i++;
       }
-      // Collect consecutive insertions
       var insertions = [];
       while (i < lines.length && lines[i].type === "insert") {
         insertions.push(lines[i]);
         i++;
       }
 
-      // Pair deletions with insertions
       if (deletions.length > 0 || insertions.length > 0) {
         var max = Math.max(deletions.length, insertions.length);
         for (var j = 0; j < max; j++) {
@@ -126,7 +125,6 @@
         continue;
       }
 
-      // Context line
       if (i < lines.length) {
         result.push({
           left: lines[i],
@@ -139,28 +137,11 @@
     return result;
   }
 
-  function getAllLinesContent(blocks, type) {
-    var content = [];
-    blocks.forEach(function (block) {
-      block.lines.forEach(function (line) {
-        if (type === "old" && line.type !== "insert") {
-          content.push(line.content.replace(/^[-+ ]/, ""));
-        } else if (type === "new" && line.type !== "delete") {
-          content.push(line.content.replace(/^[-+ ]/, ""));
-        } else if (type === "all") {
-          content.push(line.content.replace(/^[-+ ]/, ""));
-        }
-      });
-    });
-    return content.join("\n");
-  }
-
   function renderUnifiedView(file) {
     var table = document.createElement("table");
     table.className = "diff-table unified";
 
     var lang = file.language;
-    // Build full content for highlighting
     var allContent = [];
     file.blocks.forEach(function (block) {
       block.lines.forEach(function (line) {
@@ -171,7 +152,6 @@
 
     var lineIdx = 0;
     file.blocks.forEach(function (block) {
-      // Block header
       var headerRow = document.createElement("tr");
       headerRow.className = "diff-hunk-header";
       headerRow.innerHTML =
@@ -223,7 +203,6 @@
 
     var lang = file.language;
 
-    // Build old and new content separately for highlighting
     var oldContent = [];
     var newContent = [];
     file.blocks.forEach(function (block) {
@@ -240,26 +219,6 @@
     var oldHighlighted = highlightLines(oldContent.join("\n"), lang);
     var newHighlighted = highlightLines(newContent.join("\n"), lang);
 
-    file.blocks.forEach(function (block) {
-      // Block header
-      var headerRow = document.createElement("tr");
-      headerRow.className = "diff-hunk-header";
-      headerRow.innerHTML =
-        '<td colspan="4" class="text-mono text-sm">' +
-        escapeHtml(block.header || "") +
-        "</td>";
-      table.appendChild(headerRow);
-
-      var splitLines = buildSplitLines(block.lines);
-      var oldIdx = 0;
-      var newIdx = 0;
-
-      // Reset counters per block for highlighting indexing
-      // We need global counters, so track them across blocks
-    });
-
-    // Re-do with global counters
-    table.innerHTML = "";
     var globalOldIdx = 0;
     var globalNewIdx = 0;
 
@@ -292,8 +251,7 @@
             escapeHtml(pair.left.content.replace(/^[-+ ]/, ""));
           globalOldIdx++;
         } else if (pair.left) {
-          leftNum =
-            pair.left.oldNumber || "";
+          leftNum = pair.left.oldNumber || "";
           leftContent =
             oldHighlighted[globalOldIdx] ||
             escapeHtml(pair.left.content.replace(/^[-+ ]/, ""));
@@ -308,8 +266,7 @@
             escapeHtml(pair.right.content.replace(/^[-+ ]/, ""));
           globalNewIdx++;
         } else if (pair.right) {
-          rightNum =
-            pair.right.newNumber || "";
+          rightNum = pair.right.newNumber || "";
           rightContent =
             newHighlighted[globalNewIdx] ||
             escapeHtml(pair.right.content.replace(/^[-+ ]/, ""));
@@ -345,13 +302,59 @@
     return table;
   }
 
-  function formatExpiresAt(expiresAt) {
-    if (!expiresAt) return "";
+  function formatRelativeExpiry(expiresAt) {
+    if (!expiresAt) return { text: "", isWarning: false };
     try {
-      var d = new Date(expiresAt);
-      return d.toLocaleString();
+      var now = Date.now();
+      var exp = new Date(expiresAt).getTime();
+      var diff = exp - now;
+      if (diff <= 0) return { text: "Expired", isWarning: true };
+      var minutes = Math.floor(diff / 60000);
+      var hours = Math.floor(minutes / 60);
+      var remainMinutes = minutes % 60;
+      var text;
+      if (hours > 0) {
+        text = hours + "h " + remainMinutes + "m remaining";
+      } else {
+        text = minutes + "m remaining";
+      }
+      return { text: text, isWarning: minutes < 60 };
     } catch (e) {
-      return expiresAt;
+      return { text: expiresAt, isWarning: false };
+    }
+  }
+
+  function createExpiryBadge(expiresAt) {
+    var info = formatRelativeExpiry(expiresAt);
+    var badge = document.createElement("span");
+    badge.className = "expiry-badge" + (info.isWarning ? " expiry-badge--warning" : "");
+    badge.innerHTML = '<span class="expiry-dot"></span>' + escapeHtml(info.text);
+
+    // Auto-update every minute
+    setInterval(function () {
+      var updated = formatRelativeExpiry(expiresAt);
+      badge.className = "expiry-badge" + (updated.isWarning ? " expiry-badge--warning" : "");
+      badge.innerHTML = '<span class="expiry-dot"></span>' + escapeHtml(updated.text);
+    }, 60000);
+
+    return badge;
+  }
+
+  function getViewMode() {
+    try {
+      var stored = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (stored === "unified" || stored === "split") return stored;
+    } catch (e) {
+      // ignore
+    }
+    return window.innerWidth > 768 ? "split" : "unified";
+  }
+
+  function setViewMode(mode) {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, mode);
+    } catch (e) {
+      // ignore
     }
   }
 
@@ -373,16 +376,29 @@
     container.style.paddingTop = "2rem";
     container.style.paddingBottom = "2rem";
 
-    // Title section
+    // Header with title, expiry badge, and settings
     var header = document.createElement("div");
     header.style.marginBottom = "1.5rem";
-    header.innerHTML =
-      '<h1 style="font-size:1.125rem;font-weight:600">' +
+    header.style.display = "flex";
+    header.style.alignItems = "flex-start";
+    header.style.justifyContent = "space-between";
+    header.style.gap = "1rem";
+
+    var headerLeft = document.createElement("div");
+    headerLeft.innerHTML =
+      '<h1 style="font-size:1.125rem;font-weight:600;margin-bottom:0.375rem">' +
       escapeHtml(data.title || "Untitled") +
-      "</h1>" +
-      '<p class="text-sm text-muted text-mono">Expires ' +
-      escapeHtml(formatExpiresAt(expiresAt)) +
-      "</p>";
+      "</h1>";
+    headerLeft.appendChild(createExpiryBadge(expiresAt));
+
+    var headerRight = document.createElement("div");
+    headerRight.style.flexShrink = "0";
+    if (window.AgentGateSettings) {
+      window.AgentGateSettings.renderSettingsPanel(headerRight);
+    }
+
+    header.appendChild(headerLeft);
+    header.appendChild(headerRight);
     container.appendChild(header);
 
     // Summary
@@ -399,38 +415,137 @@
       "</span>";
     container.appendChild(summary);
 
-    // File blocks
-    diffFiles.forEach(function (file) {
-      var fileBlock = document.createElement("div");
-      fileBlock.className = "diff-file";
+    // Toolbar
+    var currentMode = getViewMode();
+    var toolbar = document.createElement("div");
+    toolbar.className = "diff-toolbar";
 
-      var fileHeader = document.createElement("div");
-      fileHeader.className = "diff-header";
-      fileHeader.innerHTML =
-        '<span class="text-mono text-sm">' +
-        escapeHtml(file.filename) +
-        "</span> " +
-        '<span class="badge-add">+' +
-        file.addedLines +
-        "</span> " +
-        '<span class="badge-del">-' +
-        file.deletedLines +
-        "</span>";
-      fileBlock.appendChild(fileHeader);
+    // View toggle group
+    var viewGroup = document.createElement("div");
+    viewGroup.className = "diff-toolbar-group";
 
-      // Mobile unified view
-      var mobileDiv = document.createElement("div");
-      mobileDiv.className = "mobile-only";
-      mobileDiv.appendChild(renderUnifiedView(file));
-      fileBlock.appendChild(mobileDiv);
+    var splitBtn = document.createElement("button");
+    splitBtn.className = "diff-toolbar-btn" + (currentMode === "split" ? " active" : "");
+    splitBtn.textContent = "Split";
 
-      // Desktop split view
-      var desktopDiv = document.createElement("div");
-      desktopDiv.className = "desktop-only";
-      desktopDiv.appendChild(renderSplitView(file));
-      fileBlock.appendChild(desktopDiv);
+    var unifiedBtn = document.createElement("button");
+    unifiedBtn.className = "diff-toolbar-btn" + (currentMode === "unified" ? " active" : "");
+    unifiedBtn.textContent = "Unified";
 
-      container.appendChild(fileBlock);
+    viewGroup.appendChild(splitBtn);
+    viewGroup.appendChild(unifiedBtn);
+    toolbar.appendChild(viewGroup);
+
+    // Collapse group
+    var collapseGroup = document.createElement("div");
+    collapseGroup.className = "diff-toolbar-group";
+
+    var expandAllBtn = document.createElement("button");
+    expandAllBtn.className = "diff-toolbar-btn";
+    expandAllBtn.textContent = "Expand All";
+
+    var collapseAllBtn = document.createElement("button");
+    collapseAllBtn.className = "diff-toolbar-btn";
+    collapseAllBtn.textContent = "Collapse All";
+
+    collapseGroup.appendChild(expandAllBtn);
+    collapseGroup.appendChild(collapseAllBtn);
+    toolbar.appendChild(collapseGroup);
+
+    container.appendChild(toolbar);
+
+    // File blocks container
+    var filesContainer = document.createElement("div");
+    filesContainer.id = "diff-files-container";
+
+    function renderFiles(mode) {
+      filesContainer.innerHTML = "";
+      diffFiles.forEach(function (file) {
+        var fileBlock = document.createElement("div");
+        fileBlock.className = "diff-file";
+
+        var fileHeader = document.createElement("div");
+        fileHeader.className = "diff-header";
+
+        var arrow = document.createElement("span");
+        arrow.className = "diff-collapse-arrow";
+        arrow.innerHTML = "&#9660;";
+
+        fileHeader.appendChild(arrow);
+        fileHeader.innerHTML +=
+          '<span class="text-mono text-sm">' +
+          escapeHtml(file.filename) +
+          "</span> " +
+          '<span class="badge-add">+' +
+          file.addedLines +
+          "</span> " +
+          '<span class="badge-del">-' +
+          file.deletedLines +
+          "</span>";
+
+        // Re-get arrow reference after innerHTML
+        arrow = fileHeader.querySelector(".diff-collapse-arrow");
+
+        fileBlock.appendChild(fileHeader);
+
+        var contentDiv = document.createElement("div");
+        contentDiv.className = "diff-file-content";
+
+        if (mode === "unified") {
+          contentDiv.appendChild(renderUnifiedView(file));
+        } else {
+          contentDiv.appendChild(renderSplitView(file));
+        }
+
+        fileBlock.appendChild(contentDiv);
+
+        // Collapse toggle
+        fileHeader.addEventListener("click", function () {
+          var isCollapsed = contentDiv.classList.contains("collapsed");
+          contentDiv.classList.toggle("collapsed");
+          arrow.classList.toggle("collapsed");
+        });
+
+        filesContainer.appendChild(fileBlock);
+      });
+    }
+
+    renderFiles(currentMode);
+    container.appendChild(filesContainer);
+
+    // Toggle handlers
+    splitBtn.addEventListener("click", function () {
+      splitBtn.classList.add("active");
+      unifiedBtn.classList.remove("active");
+      currentMode = "split";
+      setViewMode("split");
+      renderFiles("split");
+    });
+
+    unifiedBtn.addEventListener("click", function () {
+      unifiedBtn.classList.add("active");
+      splitBtn.classList.remove("active");
+      currentMode = "unified";
+      setViewMode("unified");
+      renderFiles("unified");
+    });
+
+    expandAllBtn.addEventListener("click", function () {
+      filesContainer.querySelectorAll(".diff-file-content").forEach(function (el) {
+        el.classList.remove("collapsed");
+      });
+      filesContainer.querySelectorAll(".diff-collapse-arrow").forEach(function (el) {
+        el.classList.remove("collapsed");
+      });
+    });
+
+    collapseAllBtn.addEventListener("click", function () {
+      filesContainer.querySelectorAll(".diff-file-content").forEach(function (el) {
+        el.classList.add("collapsed");
+      });
+      filesContainer.querySelectorAll(".diff-collapse-arrow").forEach(function (el) {
+        el.classList.add("collapsed");
+      });
     });
 
     app.innerHTML = "";
@@ -488,6 +603,10 @@
   }
 
   function init() {
+    if (window.AgentGateSettings) {
+      window.AgentGateSettings.init();
+    }
+
     var encrypted = getEncryptedData();
     if (!encrypted) return;
 
@@ -496,7 +615,6 @@
 
     var stored = P.getStoredPassphrase();
     if (stored) {
-      // Auto-decrypt with stored passphrase
       P.showPassphraseDialog(attemptDecrypt, { isDecrypting: true });
       attemptDecrypt(stored, true);
     } else {
