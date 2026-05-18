@@ -103,6 +103,137 @@
     return badge;
   }
 
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard
+        .writeText(text)
+        .then(function () {
+          return true;
+        })
+        .catch(function () {
+          return fallbackCopy(text);
+        });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+
+  function flashCopyState(btn, ok) {
+    var orig = btn.getAttribute("data-label") || btn.textContent;
+    btn.setAttribute("data-label", orig);
+    btn.textContent = ok ? "Copied!" : "Failed";
+    btn.classList.add(ok ? "copy-btn--success" : "copy-btn--error");
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.textContent = orig;
+      btn.classList.remove("copy-btn--success", "copy-btn--error");
+      btn.disabled = false;
+    }, 1500);
+  }
+
+  function createCopyButton(getText) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-btn";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      Promise.resolve(copyText(getText() || "")).then(function (ok) {
+        flashCopyState(btn, ok);
+      });
+    });
+    return btn;
+  }
+
+  function attachCodeBlockCopyButtons(container) {
+    if (!container) return;
+    var pres = container.querySelectorAll("pre");
+    for (var i = 0; i < pres.length; i++) {
+      (function (pre) {
+        var code = pre.querySelector("code");
+        if (!code) return;
+        var btn = createCopyButton(function () {
+          return code.textContent;
+        });
+        btn.classList.add("copy-btn--block");
+        pre.appendChild(btn);
+      })(pres[i]);
+    }
+  }
+
+  function renderMarkdownPanel(target, file, lang) {
+    var MD = window.AgentGateMarkdown;
+
+    var tabBar = document.createElement("div");
+    tabBar.className = "tab-bar";
+
+    var sourceTab = document.createElement("button");
+    sourceTab.type = "button";
+    sourceTab.className = "tab active";
+    sourceTab.textContent = "Source";
+
+    var previewTab = document.createElement("button");
+    previewTab.type = "button";
+    previewTab.className = "tab";
+    previewTab.textContent = "Preview";
+
+    var copyBtn = createCopyButton(function () {
+      return file.content || "";
+    });
+
+    tabBar.appendChild(sourceTab);
+    tabBar.appendChild(previewTab);
+    tabBar.appendChild(copyBtn);
+    target.appendChild(tabBar);
+
+    var sourcePane = document.createElement("pre");
+    sourcePane.className = "code-content";
+    sourcePane.innerHTML =
+      '<code class="hljs">' +
+      highlightCode(file.content || "", lang) +
+      "</code>";
+    target.appendChild(sourcePane);
+
+    var previewPane = document.createElement("div");
+    previewPane.className = "markdown-body";
+    previewPane.style.display = "none";
+    previewPane.innerHTML = MD.renderMarkdown(file.content || "");
+    attachCodeBlockCopyButtons(previewPane);
+    target.appendChild(previewPane);
+
+    sourceTab.addEventListener("click", function () {
+      sourceTab.className = "tab active";
+      previewTab.className = "tab";
+      sourcePane.style.display = "";
+      previewPane.style.display = "none";
+    });
+
+    previewTab.addEventListener("click", function () {
+      previewTab.className = "tab active";
+      sourceTab.className = "tab";
+      sourcePane.style.display = "none";
+      previewPane.style.display = "";
+    });
+  }
+
   function renderFileViewer(data, expiresAt) {
     var app = document.getElementById("app");
     if (!app) return;
@@ -163,48 +294,7 @@
       contentPanel.appendChild(headerBar);
 
       if (isMd) {
-        var tabBar = document.createElement("div");
-        tabBar.className = "tab-bar";
-
-        var sourceTab = document.createElement("button");
-        sourceTab.className = "tab active";
-        sourceTab.textContent = "Source";
-
-        var previewTab = document.createElement("button");
-        previewTab.className = "tab";
-        previewTab.textContent = "Preview";
-
-        tabBar.appendChild(sourceTab);
-        tabBar.appendChild(previewTab);
-        contentPanel.appendChild(tabBar);
-
-        var sourcePane = document.createElement("pre");
-        sourcePane.className = "code-content";
-        sourcePane.innerHTML =
-          '<code class="hljs">' +
-          highlightCode(file.content || "", lang) +
-          "</code>";
-        contentPanel.appendChild(sourcePane);
-
-        var previewPane = document.createElement("div");
-        previewPane.className = "markdown-body";
-        previewPane.style.display = "none";
-        previewPane.innerHTML = MD.renderMarkdown(file.content || "");
-        contentPanel.appendChild(previewPane);
-
-        sourceTab.addEventListener("click", function () {
-          sourceTab.className = "tab active";
-          previewTab.className = "tab";
-          sourcePane.style.display = "";
-          previewPane.style.display = "none";
-        });
-
-        previewTab.addEventListener("click", function () {
-          previewTab.className = "tab active";
-          sourceTab.className = "tab";
-          sourcePane.style.display = "none";
-          previewPane.style.display = "";
-        });
+        renderMarkdownPanel(contentPanel, file, lang);
       } else {
         var codeBlock = document.createElement("pre");
         codeBlock.className = "code-content";
@@ -268,49 +358,7 @@
       accordionBody.style.display = "none";
 
       if (isMd) {
-        var tabBar = document.createElement("div");
-        tabBar.className = "tab-bar";
-
-        var sourceTab = document.createElement("button");
-        sourceTab.className = "tab active";
-        sourceTab.textContent = "Source";
-
-        var previewTab = document.createElement("button");
-        previewTab.className = "tab";
-        previewTab.textContent = "Preview";
-
-        tabBar.appendChild(sourceTab);
-        tabBar.appendChild(previewTab);
-        accordionBody.appendChild(tabBar);
-
-        var sourcePane = document.createElement("pre");
-        sourcePane.className = "code-content";
-        sourcePane.innerHTML =
-          '<code class="hljs">' +
-          highlightCode(file.content || "", lang) +
-          "</code>";
-        accordionBody.appendChild(sourcePane);
-
-        var previewPane = document.createElement("div");
-        previewPane.className = "markdown-body";
-        previewPane.style.display = "none";
-        previewPane.innerHTML = MD.renderMarkdown(file.content || "");
-        accordionBody.appendChild(previewPane);
-
-        (function (st, pt, sp, pp) {
-          st.addEventListener("click", function () {
-            st.className = "tab active";
-            pt.className = "tab";
-            sp.style.display = "";
-            pp.style.display = "none";
-          });
-          pt.addEventListener("click", function () {
-            pt.className = "tab active";
-            st.className = "tab";
-            sp.style.display = "none";
-            pp.style.display = "";
-          });
-        })(sourceTab, previewTab, sourcePane, previewPane);
+        renderMarkdownPanel(accordionBody, file, lang);
       } else {
         var codeBlock = document.createElement("pre");
         codeBlock.className = "code-content";

@@ -472,6 +472,7 @@ a:hover {
 /* --- Tabs --- */
 .tab-bar {
   display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   padding: 0 1rem;
@@ -499,6 +500,64 @@ a:hover {
 .tab.active {
   color: var(--fg);
   border-bottom-color: var(--accent);
+}
+
+/* --- Copy button --- */
+.copy-btn {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+
+.copy-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg-muted);
+}
+
+.copy-btn:disabled {
+  cursor: default;
+}
+
+.copy-btn--success {
+  color: var(--accent, #2ea44f);
+  border-color: currentColor;
+}
+
+.copy-btn--error {
+  color: #d1242f;
+  border-color: currentColor;
+}
+
+.markdown-body pre {
+  position: relative;
+}
+
+.markdown-body pre .copy-btn--block {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  margin-left: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.1s, border-color 0.1s, background 0.1s;
+}
+
+.markdown-body pre:hover .copy-btn--block,
+.markdown-body pre .copy-btn--block:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .markdown-body pre .copy-btn--block {
+    opacity: 1;
+  }
 }
 
 /* --- Accordion (mobile file list) --- */
