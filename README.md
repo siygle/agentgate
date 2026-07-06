@@ -277,33 +277,55 @@ with **hybrid storage**: share metadata in **D1**, encrypted blobs in **R2**, an
 CLI are shared unchanged — a shared HTTP contract (`docs/api-contract.md`) is
 verified against both backends by `test/contract/`.
 
-#### One-click deploy
+> **Why no one-click button?** The frontend in `web/static` is shared with the
+> self-host server, so the Worker is intentionally *not* self-contained in `worker/`
+> (its build step reads `../web/static`). Cloudflare's one-click "Deploy to Cloudflare"
+> button isolates the chosen subdirectory and would miss those files. Connect the
+> **full repo** via Workers Builds (below) so the shared assets are present at build time.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/siygle/agentgate)
-
-The button clones the repo to your GitHub account and provisions the **D1 database**
-and **R2 bucket** declared in `worker/wrangler.jsonc`, applies the D1 migrations, and
-deploys the Worker.
-
-> **Monorepo note:** the Worker is in the `worker/` subdirectory. When prompted, set
-> the project's **build/root directory** to `worker/` (build command `npm run build`,
-> deploy command `npx wrangler deploy`). After the first deploy, set the `BASE_URL`
-> variable (in the Worker's settings) to your public URL — `https://<name>.workers.dev`
-> or a custom domain — so returned Preview/Manage links are correct.
-
-#### Manual deploy with Wrangler
+#### 1. Provision resources
 
 ```bash
 cd worker
 npm install
-npx wrangler d1 create agentgate          # copy the database_id into wrangler.jsonc
+npx wrangler d1 create agentgate            # copy the printed database_id into wrangler.jsonc
 npx wrangler r2 bucket create agentgate-blobs
-npx wrangler d1 migrations apply agentgate # --local for the local dev DB
-npm run deploy                             # syncs assets, then wrangler deploy
 ```
 
-Local development: `npm run dev` (runs `wrangler dev` with a local D1 + R2 and serves
-`web/static`). Run the shared contract test against it with
+#### 2. Deploy via Git (Workers Builds)
+
+In the Cloudflare dashboard: **Workers & Pages → Create → Workers → Import a
+repository**, select your fork of `siygle/agentgate`, and set:
+
+- **Root directory**: `worker`
+- **Build command**: `npm run build` (runs `sync-assets`)
+- **Deploy command**: `npx wrangler deploy`
+
+Cloudflare clones the **full repo** (so `../web/static` is available) and reads
+`worker/wrangler.jsonc` to bind the D1 database and R2 bucket. Each push rebuilds.
+
+Or deploy manually from a full checkout:
+
+```bash
+cd worker
+npm run deploy                              # sync-assets, then wrangler deploy
+```
+
+#### 3. Apply migrations and set the public URL
+
+```bash
+npx wrangler d1 migrations apply agentgate --remote
+```
+
+Then set the `BASE_URL` variable (Worker → Settings → Variables) to your public URL
+(`https://<name>.workers.dev` or a custom domain) so returned Preview/Manage links
+are correct.
+
+#### Local development
+
+`npm run dev` runs `wrangler dev` with a local D1 + R2 and serves `web/static`. Apply
+the local schema once with `npx wrangler d1 migrations apply agentgate --local`, then
+verify with the shared contract test:
 `node ../test/contract/run.mjs http://localhost:8787`.
 
 The CLI does not change — point it at the Worker with
