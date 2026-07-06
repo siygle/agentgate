@@ -366,6 +366,27 @@ test/contract/     HTTP contract test run against both backends
 docs/api-contract.md  Shared API contract (single source of truth)
 ```
 
+## Prebuilt binaries
+
+Each tagged release publishes statically-linked binaries on the
+[GitHub Releases](https://github.com/siygle/agentgate/releases) page (built by
+`.github/workflows/release.yml` from the `make release` matrix). Assets are named
+`agentgate-<os>-<arch>` (CLI) and `agentgate-server-<os>-<arch>` (server) for
+`darwin`/`linux` × `arm64`/`amd64`, plus `checksums.txt`.
+
+```bash
+# Example: install the CLI on Linux amd64
+curl -fsSL -o agentgate \
+  https://github.com/siygle/agentgate/releases/latest/download/agentgate-linux-amd64
+chmod +x agentgate && sudo mv agentgate /usr/local/bin/
+```
+
+Maintainers cut a release by pushing a tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 ## Building from source
 
 ```bash
