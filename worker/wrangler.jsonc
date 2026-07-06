@@ -1,0 +1,35 @@
+{
+  // AgentGate Cloudflare Worker (TypeScript + Hono).
+  // Storage is hybrid: metadata in D1, encrypted blobs in R2. Expiry cleanup
+  // runs on a Cron Trigger. The "Deploy to Cloudflare" button provisions the D1
+  // database and R2 bucket declared below and applies migrations/ on deploy.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "agentgate",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-30",
+
+  // Static assets: /static/* (css/js/vendor), / (index.html), and the view
+  // shells under /views/* that the Worker serves for /p /f /app /plan /d.
+  // Populated from ../web/static by `npm run sync-assets` (single source of truth).
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agentgate",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "agentgate-blobs" }
+  ],
+
+  // Hourly expired-record cleanup (replaces the self-host cleanup goroutine).
+  "triggers": { "crons": ["0 * * * *"] },
+
+  // Public base URL used to build preview/manage links. Override per environment
+  // (workers.dev or your custom domain) after the first deploy.
+  "vars": { "BASE_URL": "http://localhost:8787" }
+}

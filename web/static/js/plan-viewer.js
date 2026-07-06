@@ -1,27 +1,8 @@
 (function () {
   "use strict";
 
-  function getEncryptedData() {
-    var el = document.getElementById("encrypted-data");
-    if (!el) return null;
-    var val = el.getAttribute("data-value");
-    if (!val) return null;
-    try {
-      return JSON.parse(val);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function getExpiresAt() {
-    var el = document.getElementById("expires-at");
-    if (!el) return null;
-    return el.getAttribute("data-value") || "";
-  }
-
   function getShareId() {
-    var el = document.getElementById("share-meta");
-    return el ? el.getAttribute("data-id") || "unknown" : "unknown";
+    return window.AgentGateShare ? window.AgentGateShare.getShareId() : "unknown";
   }
 
   function fileMap(files) {
@@ -317,7 +298,8 @@
   }
 
   function attemptDecrypt(passphrase, remember) {
-    var encrypted = getEncryptedData();
+    var S = window.AgentGateShare;
+    var encrypted = S ? S.getEncryptedData() : null;
     if (!encrypted) return;
 
     var P = window.AgentGatePassphrase;
@@ -329,7 +311,7 @@
         var data = JSON.parse(plaintext);
         if (remember && P) P.storePassphrase(passphrase);
         if (P) P.hidePassphraseDialog();
-        renderPlanViewer(data, getExpiresAt());
+        renderPlanViewer(data, S.getExpiresAt());
       })
       .catch(function (err) {
         console.error("Decryption failed:", err);
@@ -339,17 +321,27 @@
 
   function init() {
     if (window.AgentGateSettings) window.AgentGateSettings.init();
-    var encrypted = getEncryptedData();
-    if (!encrypted) return;
+    var S = window.AgentGateShare;
     var P = window.AgentGatePassphrase;
-    if (!P) return;
-    var stored = P.getStoredPassphrase();
-    if (stored) {
-      P.showPassphraseDialog(attemptDecrypt, { isDecrypting: true });
-      attemptDecrypt(stored, true);
-    } else {
-      P.showPassphraseDialog(attemptDecrypt);
-    }
+    if (!S || !P) return;
+    S.load()
+      .then(function (share) {
+        if (!share || share.notFound || !share.encrypted) {
+          S.renderNotFound();
+          return;
+        }
+        var stored = P.getStoredPassphrase();
+        if (stored) {
+          P.showPassphraseDialog(attemptDecrypt, { isDecrypting: true });
+          attemptDecrypt(stored, true);
+        } else {
+          P.showPassphraseDialog(attemptDecrypt);
+        }
+      })
+      .catch(function (err) {
+        console.error("Failed to load share:", err);
+        S.renderNotFound();
+      });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

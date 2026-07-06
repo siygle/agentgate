@@ -2,7 +2,6 @@ package server
 
 import (
 	"database/sql"
-	"html/template"
 	"io/fs"
 	"net/http"
 
@@ -12,35 +11,20 @@ import (
 
 // Server holds dependencies and the HTTP router.
 type Server struct {
-	db        *sql.DB
-	router    chi.Router
-	templates map[string]*template.Template
-	baseURL   string
-}
-
-// parsePageTemplate parses a page template together with the layout.
-func parsePageTemplate(tfs fs.FS, page string) *template.Template {
-	return template.Must(template.ParseFS(tfs, "layout.html", page))
+	db       *sql.DB
+	router   chi.Router
+	staticFS fs.FS
+	baseURL  string
 }
 
 // New creates a Server with all routes registered.
-// templateFS should be rooted so that "*.html" matches the template files
-// (e.g. the web/templates sub-tree). staticFS should be rooted at the
-// directory whose contents are served under /static/.
-func New(db *sql.DB, baseURL string, templateFS, staticFS fs.FS) *Server {
-	tmpl := map[string]*template.Template{
-		"index.html":     parsePageTemplate(templateFS, "index.html"),
-		"diff.html":      parsePageTemplate(templateFS, "diff.html"),
-		"files.html":     parsePageTemplate(templateFS, "files.html"),
-		"app.html":       parsePageTemplate(templateFS, "app.html"),
-		"plan.html":      parsePageTemplate(templateFS, "plan.html"),
-		"not_found.html": parsePageTemplate(templateFS, "not_found.html"),
-	}
-
+// staticFS should be rooted at the directory whose contents are served under
+// /static/ (it also holds the static HTML shells: index.html and views/*.html).
+func New(db *sql.DB, baseURL string, staticFS fs.FS) *Server {
 	s := &Server{
-		db:        db,
-		templates: tmpl,
-		baseURL:   baseURL,
+		db:       db,
+		staticFS: staticFS,
+		baseURL:  baseURL,
 	}
 
 	r := chi.NewRouter()
@@ -55,7 +39,7 @@ func New(db *sql.DB, baseURL string, templateFS, staticFS fs.FS) *Server {
 	fileServer := http.FileServer(http.FS(staticFS))
 	r.Handle("/static/*", http.StripPrefix("/static/", fileServer))
 
-	// Pages
+	// Pages (Plan B: static HTML shells; client JS fetches the ciphertext).
 	r.Get("/", s.handleIndex)
 	r.Get("/llms.txt", s.handleLLMsTxt)
 	r.Get("/llms-full.txt", s.handleLLMsFullTxt)
@@ -74,6 +58,8 @@ func New(db *sql.DB, baseURL string, templateFS, staticFS fs.FS) *Server {
 	// API
 	r.Post("/api/diff", s.handleCreateDiff)
 	r.Post("/api/files", s.handleCreateFiles)
+	r.Get("/api/diff/{id}", s.handleGetDiff)
+	r.Get("/api/files/{id}", s.handleGetFiles)
 	r.Patch("/api/diff/{id}", s.handleUpdateDiff)
 	r.Patch("/api/files/{id}", s.handleUpdateFiles)
 

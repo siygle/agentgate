@@ -31,18 +31,14 @@ func main() {
 	}
 	defer database.Close()
 
-	// Prepare embedded filesystems.
-	templateFS, err := fs.Sub(web.TemplateFS, "templates")
-	if err != nil {
-		log.Fatalf("failed to create template sub-FS: %v", err)
-	}
+	// Prepare embedded filesystem.
 	staticFS, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
 		log.Fatalf("failed to create static sub-FS: %v", err)
 	}
 
 	// Create server.
-	srv := server.New(database, *baseURL, templateFS, staticFS)
+	srv := server.New(database, *baseURL, staticFS)
 
 	// Start cleanup goroutine.
 	ctx, cancel := context.WithCancel(context.Background())

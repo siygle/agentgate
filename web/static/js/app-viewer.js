@@ -185,26 +185,9 @@
     app.appendChild(viewer);
   }
 
-  function getEncryptedData() {
-    var el = document.getElementById("encrypted-data");
-    if (!el) return null;
-    var val = el.getAttribute("data-value");
-    if (!val) return null;
-    try {
-      return JSON.parse(val);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function getExpiresAt() {
-    var el = document.getElementById("expires-at");
-    if (!el) return null;
-    return el.getAttribute("data-value") || "";
-  }
-
   function attemptDecrypt(passphrase, remember) {
-    var encrypted = getEncryptedData();
+    var S = window.AgentGateShare;
+    var encrypted = S ? S.getEncryptedData() : null;
     if (!encrypted) return;
 
     var P = window.AgentGatePassphrase;
@@ -216,7 +199,7 @@
         var data = JSON.parse(plaintext);
         if (remember && P) P.storePassphrase(passphrase);
         if (P) P.hidePassphraseDialog();
-        renderAppViewer(data, getExpiresAt());
+        renderAppViewer(data, S.getExpiresAt());
       })
       .catch(function (err) {
         console.error("Decryption failed:", err);
@@ -231,19 +214,28 @@
       window.AgentGateSettings.init();
     }
 
-    var encrypted = getEncryptedData();
-    if (!encrypted) return;
-
+    var S = window.AgentGateShare;
     var P = window.AgentGatePassphrase;
-    if (!P) return;
+    if (!S || !P) return;
 
-    var stored = P.getStoredPassphrase();
-    if (stored) {
-      P.showPassphraseDialog(attemptDecrypt, { isDecrypting: true });
-      attemptDecrypt(stored, true);
-    } else {
-      P.showPassphraseDialog(attemptDecrypt);
-    }
+    S.load()
+      .then(function (share) {
+        if (!share || share.notFound || !share.encrypted) {
+          S.renderNotFound();
+          return;
+        }
+        var stored = P.getStoredPassphrase();
+        if (stored) {
+          P.showPassphraseDialog(attemptDecrypt, { isDecrypting: true });
+          attemptDecrypt(stored, true);
+        } else {
+          P.showPassphraseDialog(attemptDecrypt);
+        }
+      })
+      .catch(function (err) {
+        console.error("Failed to load share:", err);
+        S.renderNotFound();
+      });
   }
 
   document.addEventListener("DOMContentLoaded", init);

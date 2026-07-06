@@ -83,16 +83,7 @@
   }
 
   function getShareMeta() {
-    var el = document.getElementById("share-meta");
-    if (!el) return null;
-    var id = el.getAttribute("data-id");
-    var kind = el.getAttribute("data-kind");
-    if (!id || !kind) return null;
-    return {
-      id: id,
-      kind: kind,
-      neverExpires: el.getAttribute("data-never-expires") === "1",
-    };
+    return window.AgentGateShare ? window.AgentGateShare.getShareMeta() : null;
   }
 
   function getOwnerTokenFromFragment() {

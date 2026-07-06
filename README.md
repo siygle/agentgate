@@ -268,6 +268,47 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
+### Cloudflare Workers
+
+AgentGate can also run on Cloudflare Workers (edge, no server to host). The Worker
+lives in [`worker/`](worker/) and is a TypeScript + Hono port of the same HTTP API,
+with **hybrid storage**: share metadata in **D1**, encrypted blobs in **R2**, and a
+**Cron Trigger** for expired-record cleanup. The frontend in `web/static` and the
+CLI are shared unchanged — a shared HTTP contract (`docs/api-contract.md`) is
+verified against both backends by `test/contract/`.
+
+#### One-click deploy
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/siygle/agentgate)
+
+The button clones the repo to your GitHub account and provisions the **D1 database**
+and **R2 bucket** declared in `worker/wrangler.jsonc`, applies the D1 migrations, and
+deploys the Worker.
+
+> **Monorepo note:** the Worker is in the `worker/` subdirectory. When prompted, set
+> the project's **build/root directory** to `worker/` (build command `npm run build`,
+> deploy command `npx wrangler deploy`). After the first deploy, set the `BASE_URL`
+> variable (in the Worker's settings) to your public URL — `https://<name>.workers.dev`
+> or a custom domain — so returned Preview/Manage links are correct.
+
+#### Manual deploy with Wrangler
+
+```bash
+cd worker
+npm install
+npx wrangler d1 create agentgate          # copy the database_id into wrangler.jsonc
+npx wrangler r2 bucket create agentgate-blobs
+npx wrangler d1 migrations apply agentgate # --local for the local dev DB
+npm run deploy                             # syncs assets, then wrangler deploy
+```
+
+Local development: `npm run dev` (runs `wrangler dev` with a local D1 + R2 and serves
+`web/static`). Run the shared contract test against it with
+`node ../test/contract/run.mjs http://localhost:8787`.
+
+The CLI does not change — point it at the Worker with
+`export AGENTGATE_SERVER=https://<name>.workers.dev`.
+
 ## Security
 
 - **AES-256-GCM** encryption
@@ -280,22 +321,27 @@ WantedBy=multi-user.target
 
 ## Tech stack
 
-- **Server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
-- **CLI** — Go, cross-compiled to single binaries
-- **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js
+Two interchangeable backends behind one shared HTTP API and frontend:
+
+- **Self-host server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
+- **Cloudflare Worker** — TypeScript, Hono, D1 (metadata) + R2 (encrypted blobs), Cron Trigger cleanup
+- **CLI** — Go, cross-compiled to single binaries (unchanged across both backends)
+- **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js; pages fetch ciphertext via the JSON API
 
 ## Project structure
 
 ```
-cmd/server/        Server entry point
-cmd/agentgate/     CLI entry point
+cmd/server/        Self-host server entry point
+cmd/agentgate/     CLI entry point (shared by both backends)
 internal/server/   HTTP handlers, router, middleware
 internal/db/       SQLite database layer
-internal/crypto/   AES-256-GCM encryption
+internal/crypto/   AES-256-GCM encryption (CLI)
 internal/id/       ID generation
-internal/cleanup/  Expired content cleanup
-web/templates/     HTML templates
-web/static/        CSS, JS, vendor libraries
+internal/cleanup/  Expired content cleanup (goroutine)
+web/static/        Shared frontend: CSS, JS, vendor libs, static view shells (views/)
+worker/            Cloudflare Worker (TypeScript + Hono, D1 + R2)
+test/contract/     HTTP contract test run against both backends
+docs/api-contract.md  Shared API contract (single source of truth)
 ```
 
 ## Building from source

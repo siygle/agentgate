@@ -58,6 +58,80 @@ type updateResponseData struct {
 	ExpiresAt    string `json:"expires_at,omitempty"`
 }
 
+// getResponseData is returned by GET /api/{diff,files}/{id}. EncryptedData is
+// emitted as a nested JSON object (the stored ciphertext blob), not a string.
+type getResponseData struct {
+	EncryptedData json.RawMessage `json:"encrypted_data"`
+	ExpiresAt     string          `json:"expires_at,omitempty"`
+	NeverExpires  bool            `json:"never_expires"`
+	ID            string          `json:"id"`
+	Kind          string          `json:"kind"`
+}
+
+// handleGetDiff returns a diff share's ciphertext + expiry metadata.
+func (s *Server) handleGetDiff(w http.ResponseWriter, r *http.Request) {
+	s.handleGet(w, r, "diff")
+}
+
+// handleGetFiles returns a file bundle's ciphertext + expiry metadata.
+func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
+	s.handleGet(w, r, "files")
+}
+
+func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) {
+	recordID := chi.URLParam(r, "id")
+
+	var (
+		encData      string
+		expiredAt    time.Time
+		neverExpires bool
+		found        bool
+	)
+
+	switch kind {
+	case "diff":
+		d, err := db.GetDiff(s.db, recordID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		if d != nil {
+			found = true
+			encData = d.EncryptedData
+			expiredAt = d.ExpiredAt
+			neverExpires = d.NeverExpires
+		}
+	case "files":
+		fb, err := db.GetFileBundle(s.db, recordID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		if fb != nil {
+			found = true
+			encData = fb.EncryptedData
+			expiredAt = fb.ExpiredAt
+			neverExpires = fb.NeverExpires
+		}
+	}
+
+	if !found || (!neverExpires && expiredAt.Before(time.Now().UTC())) {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+
+	data := getResponseData{
+		EncryptedData: json.RawMessage(encData),
+		NeverExpires:  neverExpires,
+		ID:            recordID,
+		Kind:          kind,
+	}
+	if !neverExpires {
+		data.ExpiresAt = expiredAt.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: data})
+}
+
 // handleCreateDiff creates an encrypted diff record.
 func (s *Server) handleCreateDiff(w http.ResponseWriter, r *http.Request) {
 	s.handleCreate(w, r, "diff")

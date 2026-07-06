@@ -1,157 +1,50 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
-	"time"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/siygle/agentgate/internal/db"
 )
 
-// ViewPageData is passed to the diff and files view templates.
-type ViewPageData struct {
-	EncryptedData string // raw JSON string, embedded as data-value attribute
-	ExpiresAt     string // ISO 8601 — empty when NeverExpires is true
-	NeverExpires  bool
-	ID            string // record id, for the manage PATCH endpoint
-	Kind          string // "diff" or "files" — selects the PATCH endpoint prefix
-}
-
-// renderTemplate executes a named page template with the layout.
-func (s *Server) renderTemplate(w http.ResponseWriter, name string, status int, data interface{}) {
-	t, ok := s.templates[name]
-	if !ok {
-		http.Error(w, "template not found", http.StatusInternalServerError)
+// servePage writes a static HTML shell from the embedded static filesystem.
+// Under Plan B the server no longer injects share content into the page; the
+// client JS derives kind+id from the URL and fetches GET /api/{kind}/{id}.
+// View routes therefore always return 200 for an existing shell — a missing or
+// expired share surfaces as a 404 from the API and a not-found state in the UI.
+func (s *Server) servePage(w http.ResponseWriter, r *http.Request, name string) {
+	data, err := fs.ReadFile(s.staticFS, name)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	w.WriteHeader(status)
-	t.ExecuteTemplate(w, "layout", data)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		w.Write(data)
+	}
 }
 
-// handleIndex renders the landing page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.renderTemplate(w, "index.html", http.StatusOK, nil)
+	s.servePage(w, r, "index.html")
 }
 
-// handleViewDiff renders the diff viewer page.
 func (s *Server) handleViewDiff(w http.ResponseWriter, r *http.Request) {
-	diffID := chi.URLParam(r, "id")
-
-	diff, err := db.GetDiff(s.db, diffID)
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if diff == nil || (!diff.NeverExpires && diff.ExpiredAt.Before(time.Now().UTC())) {
-		s.renderTemplate(w, "not_found.html", http.StatusNotFound, nil)
-		return
-	}
-
-	data := ViewPageData{
-		EncryptedData: diff.EncryptedData,
-		NeverExpires:  diff.NeverExpires,
-		ID:            diff.ID,
-		Kind:          "diff",
-	}
-	if !diff.NeverExpires {
-		data.ExpiresAt = diff.ExpiredAt.Format(time.RFC3339)
-	}
-	s.renderTemplate(w, "diff.html", http.StatusOK, data)
+	s.servePage(w, r, "views/diff.html")
 }
 
-// handleViewFiles renders the file viewer page.
 func (s *Server) handleViewFiles(w http.ResponseWriter, r *http.Request) {
-	bundleID := chi.URLParam(r, "id")
-
-	bundle, err := db.GetFileBundle(s.db, bundleID)
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if bundle == nil || (!bundle.NeverExpires && bundle.ExpiredAt.Before(time.Now().UTC())) {
-		s.renderTemplate(w, "not_found.html", http.StatusNotFound, nil)
-		return
-	}
-
-	data := ViewPageData{
-		EncryptedData: bundle.EncryptedData,
-		NeverExpires:  bundle.NeverExpires,
-		ID:            bundle.ID,
-		Kind:          "files",
-	}
-	if !bundle.NeverExpires {
-		data.ExpiresAt = bundle.ExpiredAt.Format(time.RFC3339)
-	}
-	s.renderTemplate(w, "files.html", http.StatusOK, data)
+	s.servePage(w, r, "views/files.html")
 }
 
-// handleViewApp renders the webapp viewer page. It reads the same file_bundles
-// record as handleViewFiles; the bundle is assembled into a runnable page in a
-// sandboxed iframe client-side after decryption.
 func (s *Server) handleViewApp(w http.ResponseWriter, r *http.Request) {
-	bundleID := chi.URLParam(r, "id")
-
-	bundle, err := db.GetFileBundle(s.db, bundleID)
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if bundle == nil || (!bundle.NeverExpires && bundle.ExpiredAt.Before(time.Now().UTC())) {
-		s.renderTemplate(w, "not_found.html", http.StatusNotFound, nil)
-		return
-	}
-
-	data := ViewPageData{
-		EncryptedData: bundle.EncryptedData,
-		NeverExpires:  bundle.NeverExpires,
-		ID:            bundle.ID,
-		Kind:          "files",
-	}
-	if !bundle.NeverExpires {
-		data.ExpiresAt = bundle.ExpiredAt.Format(time.RFC3339)
-	}
-	s.renderTemplate(w, "app.html", http.StatusOK, data)
+	s.servePage(w, r, "views/app.html")
 }
 
-// handleViewPlan renders an encrypted visual plan. It uses the same file_bundles
-// storage and owner controls as /f/{id}; decryption and rendering happen in the
-// browser so the server never sees the plan text.
+// handleViewPlan and handleViewDocs share the plan viewer shell; the encrypted
+// payload's kind selects plan vs generic-document rendering client-side.
 func (s *Server) handleViewPlan(w http.ResponseWriter, r *http.Request) {
-	s.handleViewDocumentBundle(w, r)
+	s.servePage(w, r, "views/plan.html")
 }
 
-// handleViewDocs renders a generic encrypted document bundle. It intentionally
-// uses the same renderer as visual plans but relies on the encrypted payload kind
-// to choose generic labels and to avoid plan-specific UI.
 func (s *Server) handleViewDocs(w http.ResponseWriter, r *http.Request) {
-	s.handleViewDocumentBundle(w, r)
-}
-
-func (s *Server) handleViewDocumentBundle(w http.ResponseWriter, r *http.Request) {
-	bundleID := chi.URLParam(r, "id")
-
-	bundle, err := db.GetFileBundle(s.db, bundleID)
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if bundle == nil || (!bundle.NeverExpires && bundle.ExpiredAt.Before(time.Now().UTC())) {
-		s.renderTemplate(w, "not_found.html", http.StatusNotFound, nil)
-		return
-	}
-
-	data := ViewPageData{
-		EncryptedData: bundle.EncryptedData,
-		NeverExpires:  bundle.NeverExpires,
-		ID:            bundle.ID,
-		Kind:          "files",
-	}
-	if !bundle.NeverExpires {
-		data.ExpiresAt = bundle.ExpiredAt.Format(time.RFC3339)
-	}
-	s.renderTemplate(w, "plan.html", http.StatusOK, data)
+	s.servePage(w, r, "views/plan.html")
 }
