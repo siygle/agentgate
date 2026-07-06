@@ -272,10 +272,20 @@ WantedBy=multi-user.target
 
 AgentGate can also run on Cloudflare Workers (edge, no server to host). The Worker
 lives in [`worker/`](worker/) and is a TypeScript + Hono port of the same HTTP API,
-with **hybrid storage**: share metadata in **D1**, encrypted blobs in **R2**, and a
-**Cron Trigger** for expired-record cleanup. The frontend in `web/static` and the
-CLI are shared unchanged — a shared HTTP contract (`docs/api-contract.md`) is
+with a **Cron Trigger** for expired-record cleanup. The frontend in `web/static` and
+the CLI are shared unchanged — a shared HTTP contract (`docs/api-contract.md`) is
 verified against both backends by `test/contract/`.
+
+Storage is configurable via the **`USE_R2`** variable, so R2 (which needs a paid
+subscription) is entirely optional:
+
+| `USE_R2` | Storage | When |
+|----------|---------|------|
+| `false` (default) | **D1-only** — metadata *and* encrypted blobs in D1 | Works on the free tier, no R2 needed |
+| `true` | **D1 + R2 hybrid** — metadata in D1, blobs in R2 | Best for very large webapp/plan bundles |
+
+Everything works out of the box in D1-only mode. Enable R2 later without code
+changes; existing D1-stored records keep working.
 
 > **Why no one-click button?** The frontend in `web/static` is shared with the
 > self-host server, so the Worker is intentionally *not* self-contained in `worker/`
@@ -285,10 +295,18 @@ verified against both backends by `test/contract/`.
 
 #### 1. Provision resources
 
+D1-only (default) needs just a database:
+
 ```bash
 cd worker
 npm install
 npx wrangler d1 create agentgate            # copy the printed database_id into wrangler.jsonc
+```
+
+To use R2 (optional): uncomment the `r2_buckets` block in `wrangler.jsonc`, set
+`USE_R2` to `"true"` there, then:
+
+```bash
 npx wrangler r2 bucket create agentgate-blobs
 ```
 
@@ -346,7 +364,7 @@ The CLI does not change — point it at the Worker with
 Two interchangeable backends behind one shared HTTP API and frontend:
 
 - **Self-host server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
-- **Cloudflare Worker** — TypeScript, Hono, D1 (metadata) + R2 (encrypted blobs), Cron Trigger cleanup
+- **Cloudflare Worker** — TypeScript, Hono, D1 (optional R2 for blobs via `USE_R2`), Cron Trigger cleanup
 - **CLI** — Go, cross-compiled to single binaries (unchanged across both backends)
 - **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js; pages fetch ciphertext via the JSON API
 

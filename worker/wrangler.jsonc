@@ -1,8 +1,14 @@
 {
   // AgentGate Cloudflare Worker (TypeScript + Hono).
-  // Storage is hybrid: metadata in D1, encrypted blobs in R2. Expiry cleanup
-  // runs on a Cron Trigger. The "Deploy to Cloudflare" button provisions the D1
-  // database and R2 bucket declared below and applies migrations/ on deploy.
+  //
+  // Storage is configurable via the USE_R2 variable:
+  //   - Default (USE_R2 "false"): D1-only — metadata AND encrypted blobs both in
+  //     D1. Works on the free tier with no R2 subscription.
+  //   - USE_R2 "true": D1 + R2 hybrid — blobs in R2 (better for very large
+  //     bundles). Requires uncommenting the r2_buckets binding below, creating
+  //     the bucket, and an account with R2 enabled.
+  //
+  // Expiry cleanup runs on a Cron Trigger either way.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "agentgate",
   "main": "src/index.ts",
@@ -22,14 +28,16 @@
     }
   ],
 
-  "r2_buckets": [
-    { "binding": "BLOBS", "bucket_name": "agentgate-blobs" }
-  ],
+  // To enable R2 (paid): uncomment this block, run
+  // `npx wrangler r2 bucket create agentgate-blobs`, and set USE_R2 to "true".
+  // "r2_buckets": [
+  //   { "binding": "BLOBS", "bucket_name": "agentgate-blobs" }
+  // ],
 
   // Hourly expired-record cleanup (replaces the self-host cleanup goroutine).
   "triggers": { "crons": ["0 * * * *"] },
 
-  // Public base URL used to build preview/manage links. Override per environment
-  // (workers.dev or your custom domain) after the first deploy.
-  "vars": { "BASE_URL": "http://localhost:8787" }
+  // BASE_URL: public URL for preview/manage links (set after first deploy).
+  // USE_R2: "true" to use the D1 + R2 hybrid; anything else = D1-only.
+  "vars": { "BASE_URL": "http://localhost:8787", "USE_R2": "false" }
 }

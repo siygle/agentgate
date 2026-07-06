@@ -1,58 +1,85 @@
 import { env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
+import type { Env } from "../src/bindings";
 import {
   createShare,
   getShare,
   setNeverExpires,
   deleteExpired,
   nowSeconds,
+  useR2,
   NEVER_EXPIRES_AT,
 } from "../src/store";
 
 const enc = JSON.stringify({ ciphertext: "ct", iv: "iv", salt: "salt" });
 
-describe("hybrid store (D1 metadata + R2 blob)", () => {
-  it("create + get round-trips through D1 and R2", async () => {
-    await createShare(env, "files", "AAA111", enc, nowSeconds() + 3600, false, "hash1");
-    const rec = await getShare(env, "files", "AAA111");
+// Two env variants over the same D1 + R2 bindings, toggling the storage mode.
+const d1Env: Env = { ...(env as unknown as Env), USE_R2: "false" };
+const r2Env: Env = { ...(env as unknown as Env), USE_R2: "true" };
+
+describe("useR2 flag", () => {
+  it("is off unless USE_R2 is exactly 'true' with a binding", () => {
+    expect(useR2(d1Env)).toBe(false);
+    expect(useR2(r2Env)).toBe(true);
+    expect(useR2({ ...(env as unknown as Env), USE_R2: "true", BLOBS: undefined })).toBe(false);
+    expect(useR2({ ...(env as unknown as Env), USE_R2: undefined })).toBe(false);
+  });
+});
+
+describe("D1-only mode (default, no R2 subscription)", () => {
+  it("stores the blob in D1 and does NOT write to R2", async () => {
+    await createShare(d1Env, "files", "D1A001", enc, nowSeconds() + 3600, false, "hash1");
+    const rec = await getShare(d1Env, "files", "D1A001");
     expect(rec).not.toBeNull();
     expect(rec!.encrypted_data).toEqual({ ciphertext: "ct", iv: "iv", salt: "salt" });
-    expect(rec!.kind).toBe("files");
-    expect(rec!.never_expires).toBe(false);
-    expect(rec!.expires_at).not.toBe("");
-    // Blob physically present in R2.
-    expect(await env.BLOBS.get("files/AAA111")).not.toBeNull();
+    // No R2 object was created for a D1-only record.
+    expect(await env.BLOBS!.get("files/D1A001")).toBeNull();
   });
 
-  it("getShare returns null for an expired record", async () => {
-    await createShare(env, "diff", "EXP001", enc, nowSeconds() - 10, false, "h");
-    expect(await getShare(env, "diff", "EXP001")).toBeNull();
-  });
-
-  it("deleteExpired removes expired rows + blobs but keeps never_expires", async () => {
-    await createShare(env, "files", "OLD001", enc, nowSeconds() - 10, false, "h");
-    await createShare(env, "files", "KEEP01", enc, NEVER_EXPIRES_AT, true, "h");
-
-    const removed = await deleteExpired(env);
+  it("deleteExpired removes expired D1-only rows, keeps never_expires", async () => {
+    await createShare(d1Env, "files", "D1OLD1", enc, nowSeconds() - 10, false, "h");
+    await createShare(d1Env, "files", "D1KEEP", enc, NEVER_EXPIRES_AT, true, "h");
+    const removed = await deleteExpired(d1Env);
     expect(removed).toBeGreaterThanOrEqual(1);
+    expect(await getShare(d1Env, "files", "D1OLD1")).toBeNull();
+    expect(await getShare(d1Env, "files", "D1KEEP")).not.toBeNull();
+  });
+});
 
-    expect(await env.BLOBS.get("files/OLD001")).toBeNull();
-    expect(await env.BLOBS.get("files/KEEP01")).not.toBeNull();
-    expect(await getShare(env, "files", "KEEP01")).not.toBeNull();
+describe("hybrid mode (USE_R2=true)", () => {
+  it("stores the blob in R2 and round-trips", async () => {
+    await createShare(r2Env, "files", "R2A001", enc, nowSeconds() + 3600, false, "hash1");
+    const rec = await getShare(r2Env, "files", "R2A001");
+    expect(rec!.encrypted_data).toEqual({ ciphertext: "ct", iv: "iv", salt: "salt" });
+    expect(await env.BLOBS!.get("files/R2A001")).not.toBeNull();
   });
 
-  it("setNeverExpires updates D1 only; blob is untouched", async () => {
-    await createShare(env, "files", "TOG001", enc, nowSeconds() + 3600, false, "h");
-    const before = await env.BLOBS.get("files/TOG001");
-    const beforeText = await before!.text();
+  it("deleteExpired removes expired rows + their R2 blobs, keeps never_expires", async () => {
+    await createShare(r2Env, "files", "R2OLD1", enc, nowSeconds() - 10, false, "h");
+    await createShare(r2Env, "files", "R2KEEP", enc, NEVER_EXPIRES_AT, true, "h");
+    await deleteExpired(r2Env);
+    expect(await env.BLOBS!.get("files/R2OLD1")).toBeNull();
+    expect(await env.BLOBS!.get("files/R2KEEP")).not.toBeNull();
+  });
+});
 
-    await setNeverExpires(env, "files", "TOG001", true, null);
+describe("cross-mode reads", () => {
+  it("a record written via R2 is still readable when the R2 binding is available", async () => {
+    await createShare(r2Env, "diff", "XMODE1", enc, nowSeconds() + 3600, false, "h");
+    // Reading with D1-only env still works because getShare falls back to R2
+    // whenever the row has no inline blob and the binding is present.
+    const rec = await getShare(d1Env, "diff", "XMODE1");
+    expect(rec!.encrypted_data).toEqual({ ciphertext: "ct", iv: "iv", salt: "salt" });
+  });
+});
 
-    const rec = await getShare(env, "files", "TOG001");
+describe("setNeverExpires", () => {
+  it("updates D1 only; the blob is untouched (D1-only mode)", async () => {
+    await createShare(d1Env, "files", "TOG001", enc, nowSeconds() + 3600, false, "h");
+    await setNeverExpires(d1Env, "files", "TOG001", true, null);
+    const rec = await getShare(d1Env, "files", "TOG001");
     expect(rec!.never_expires).toBe(true);
     expect(rec!.expires_at).toBe("");
-
-    const after = await env.BLOBS.get("files/TOG001");
-    expect(await after!.text()).toBe(beforeText);
+    expect(rec!.encrypted_data).toEqual({ ciphertext: "ct", iv: "iv", salt: "salt" });
   });
 });

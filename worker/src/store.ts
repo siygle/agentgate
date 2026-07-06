@@ -1,7 +1,13 @@
 import type { Env } from "./bindings";
 
-// Hybrid storage: metadata rows in D1, encrypted blobs in R2.
-// R2 key layout: "<kind>/<id>" (e.g. "diff/ABC123", "files/ABC123").
+// Storage has two modes, selected by the USE_R2 env var:
+//   - D1-only (default): the encrypted blob is stored in the D1 `encrypted_data`
+//     column. Works without a paid R2 subscription.
+//   - Hybrid (USE_R2="true" and the BLOBS binding present): metadata in D1, the
+//     encrypted blob in R2 (keyed "<kind>/<id>"). Better for very large bundles.
+// getShare reads whichever storage a record actually used, so switching modes
+// does not orphan or hide existing records (as long as R2 stays reachable for
+// blobs already written there).
 
 export type Kind = "diff" | "files";
 
@@ -15,6 +21,12 @@ export const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+// useR2 reports whether the R2 hybrid path is active. R2 is used only when
+// explicitly enabled AND the binding exists; otherwise everything is D1-only.
+export function useR2(env: Env): boolean {
+  return env.USE_R2 === "true" && !!env.BLOBS;
 }
 
 function r2Key(kind: Kind, id: string): string {
@@ -31,13 +43,15 @@ export interface ShareRecord {
 
 export interface MetaRow {
   r2_key: string;
+  encrypted_data: string | null;
   expired_at: number;
   never_expires: number;
   owner_token_hash: string | null;
 }
 
-// createShare writes the blob to R2, then the metadata row to D1. If the D1
-// write fails, the orphaned R2 object is removed so the two stores stay in sync.
+// createShare stores the blob (R2 in hybrid mode, else the D1 column) and the
+// metadata row. In hybrid mode, if the D1 write fails the orphaned R2 object is
+// removed so the two stores stay in sync.
 export async function createShare(
   env: Env,
   kind: Kind,
@@ -47,24 +61,37 @@ export async function createShare(
   neverExpires: boolean,
   ownerHash: string,
 ): Promise<void> {
-  const key = r2Key(kind, id);
-  await env.BLOBS.put(key, encJson);
+  const r2 = useR2(env);
+  const key = r2 ? r2Key(kind, id) : "";
+
+  if (r2) {
+    await env.BLOBS!.put(key, encJson);
+  }
   try {
     await env.DB.prepare(
-      `INSERT INTO ${TABLE[kind]} (id, r2_key, expired_at, created_at, never_expires, owner_token_hash)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${TABLE[kind]} (id, r2_key, encrypted_data, expired_at, created_at, never_expires, owner_token_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, key, expiredAtSec, nowSeconds(), neverExpires ? 1 : 0, ownerHash || null)
+      .bind(
+        id,
+        key,
+        r2 ? null : encJson,
+        expiredAtSec,
+        nowSeconds(),
+        neverExpires ? 1 : 0,
+        ownerHash || null,
+      )
       .run();
   } catch (err) {
-    await env.BLOBS.delete(key).catch(() => {});
+    if (r2) await env.BLOBS!.delete(key).catch(() => {});
     throw err;
   }
 }
 
 async function getMeta(env: Env, kind: Kind, id: string): Promise<MetaRow | null> {
   const row = await env.DB.prepare(
-    `SELECT r2_key, expired_at, never_expires, owner_token_hash FROM ${TABLE[kind]} WHERE id = ?`,
+    `SELECT r2_key, encrypted_data, expired_at, never_expires, owner_token_hash
+     FROM ${TABLE[kind]} WHERE id = ?`,
   )
     .bind(id)
     .first<MetaRow>();
@@ -75,17 +102,29 @@ function isExpired(row: MetaRow): boolean {
   return row.never_expires === 0 && row.expired_at <= nowSeconds();
 }
 
-// getShare returns the full record (metadata + decrypted-from-R2 ciphertext blob),
-// or null when missing or expired.
+// getShare returns the full record, reading the blob from wherever it was stored
+// (D1 column or R2), or null when missing/expired.
 export async function getShare(env: Env, kind: Kind, id: string): Promise<ShareRecord | null> {
   const row = await getMeta(env, kind, id);
   if (!row || isExpired(row)) return null;
 
-  const obj = await env.BLOBS.get(row.r2_key);
-  if (!obj) return null; // metadata without blob: treat as not found
+  let text: string;
+  if (row.encrypted_data != null) {
+    // D1-only record.
+    text = row.encrypted_data;
+  } else if (row.r2_key && env.BLOBS) {
+    // Hybrid record: fetch the blob from R2.
+    const obj = await env.BLOBS.get(row.r2_key);
+    if (!obj) return null; // metadata without blob: treat as not found
+    text = await obj.text();
+  } else {
+    // R2 record but the binding is unavailable — cannot serve it.
+    return null;
+  }
+
   let encrypted: unknown;
   try {
-    encrypted = JSON.parse(await obj.text());
+    encrypted = JSON.parse(text);
   } catch {
     return null;
   }
@@ -123,8 +162,9 @@ export async function setNeverExpires(
     .run();
 }
 
-// deleteExpired removes expired rows from both tables and their R2 blobs.
-// Rows with never_expires = 1 are skipped. Returns the number of deleted records.
+// deleteExpired removes expired rows from both tables (and their R2 blobs, for
+// rows that have one). Rows with never_expires = 1 are skipped. Returns the
+// number of deleted records.
 export async function deleteExpired(env: Env): Promise<number> {
   const now = nowSeconds();
   let total = 0;
@@ -135,13 +175,17 @@ export async function deleteExpired(env: Env): Promise<number> {
     )
       .bind(now)
       .all<{ r2_key: string }>();
-    const keys = (results ?? []).map((r) => r.r2_key);
-    if (keys.length === 0) continue;
-    await env.BLOBS.delete(keys);
+    const rows = results ?? [];
+    if (rows.length === 0) continue;
+
+    const r2Keys = rows.map((r) => r.r2_key).filter((k) => k && k.length > 0);
+    if (r2Keys.length > 0 && env.BLOBS) {
+      await env.BLOBS.delete(r2Keys);
+    }
     await env.DB.prepare(`DELETE FROM ${table} WHERE never_expires = 0 AND expired_at <= ?`)
       .bind(now)
       .run();
-    total += keys.length;
+    total += rows.length;
   }
   return total;
 }

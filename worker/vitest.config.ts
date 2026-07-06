@@ -17,6 +17,9 @@ export default defineWorkersConfig(async () => {
             // Required by @cloudflare/vitest-pool-workers; test-only, so the
             // deployed Worker keeps its minimal compatibility flags.
             compatibilityFlags: ["nodejs_compat"],
+            // R2 binding is opt-in in wrangler.jsonc (commented out); provide it
+            // here so tests can exercise the hybrid path alongside D1-only.
+            r2Buckets: ["BLOBS"],
             // Exposed to the setup file so it can apply the schema to the test D1.
             bindings: { TEST_MIGRATIONS: migrations },
           },
