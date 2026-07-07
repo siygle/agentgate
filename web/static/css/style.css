@@ -1646,6 +1646,19 @@ a:hover {
     max-height: none !important;
   }
 
+  /* Webapp viewer: the sandboxed iframe is normally locked to one viewport
+     (height:100vh + flex), which clips the print to a single page. During an
+     app export the iframe is given its full content height inline; drop the
+     viewport lock so Chrome flattens and paginates the whole iframe. */
+  body.agentgate-printing-app .app-viewer {
+    height: auto !important;
+    display: block !important;
+  }
+  body.agentgate-printing-app .app-frame {
+    flex: none !important;
+    width: 100% !important;
+  }
+
   @page {
     margin: 1.5cm;
   }
