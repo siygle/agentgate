@@ -337,6 +337,106 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, kind strin
 	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: respData})
 }
 
+// handleReplaceDiff overwrites a diff record's ciphertext (in-place re-key).
+func (s *Server) handleReplaceDiff(w http.ResponseWriter, r *http.Request) {
+	s.handleReplace(w, r, "diff")
+}
+
+// handleReplaceFiles overwrites a file bundle's ciphertext (in-place re-key).
+func (s *Server) handleReplaceFiles(w http.ResponseWriter, r *http.Request) {
+	s.handleReplace(w, r, "files")
+}
+
+// handleReplace overwrites the encrypted blob of an existing share, keeping the
+// same id, links, expiry, and owner token. Authenticated by the owner token in
+// the Authorization header. This backs "reset passphrase": the client decrypts
+// with the old passphrase, re-encrypts with a new one, and PUTs the new blob.
+func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind string) {
+	recordID := chi.URLParam(r, "id")
+	if recordID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "id required"})
+		return
+	}
+
+	token := extractBearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		writeJSON(w, http.StatusUnauthorized, apiResponse{Success: false, Error: "missing bearer token"})
+		return
+	}
+
+	var req createRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
+		return
+	}
+	if req.EncryptedData.Ciphertext == "" || req.EncryptedData.IV == "" || req.EncryptedData.Salt == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{
+			Success: false,
+			Error:   "encrypted_data must include non-empty ciphertext, iv, and salt",
+		})
+		return
+	}
+
+	var storedHash string
+	var found bool
+	switch kind {
+	case "diff":
+		d, err := db.GetDiff(s.db, recordID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		if d != nil {
+			found = true
+			if d.OwnerTokenHash.Valid {
+				storedHash = d.OwnerTokenHash.String
+			}
+		}
+	case "files":
+		fb, err := db.GetFileBundle(s.db, recordID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		if fb != nil {
+			found = true
+			if fb.OwnerTokenHash.Valid {
+				storedHash = fb.OwnerTokenHash.String
+			}
+		}
+	}
+
+	if !found {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	if storedHash == "" || !verifyOwnerToken(token, storedHash) {
+		writeJSON(w, http.StatusUnauthorized, apiResponse{Success: false, Error: "invalid token"})
+		return
+	}
+
+	encJSON, err := json.Marshal(req.EncryptedData)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+
+	switch kind {
+	case "diff":
+		if err := db.UpdateDiffEncryptedData(s.db, recordID, string(encJSON)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+	case "files":
+		if err := db.UpdateFileBundleEncryptedData(s.db, recordID, string(encJSON)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]string{"id": recordID}})
+}
+
 func resolveExpiry(expiresInSeconds int64) time.Duration {
 	if expiresInSeconds <= 0 {
 		return defaultExpiry

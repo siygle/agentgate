@@ -20,6 +20,10 @@ import (
 
 // Server must be configured via -s flag or AGENTGATE_SERVER env var.
 
+// defaultTTLSeconds mirrors the server's default share lifetime (7 days). Used
+// to estimate expires_at for the local registry when no -t is given.
+const defaultTTLSeconds = 7 * 24 * 60 * 60
+
 // DiffPayload is the JSON body sent to POST /api/diff.
 type DiffPayload struct {
 	Title string            `json:"title"`
@@ -76,6 +80,10 @@ func main() {
 		runPlan(args)
 	case "docs":
 		runDocs(args)
+	case "list":
+		runList(args)
+	case "rekey":
+		runRekey(args)
 	case "key-gen":
 		runKeyGen(args)
 	case "key-get":
@@ -97,17 +105,23 @@ Commands:
   webapp      [-s server] [-p passphrase] [-t ttl|--no-expiry] <dir>         Share a runnable static webapp
   plan        [-s server] [-p passphrase] [-t ttl|--no-expiry] <file|dir>    Share an encrypted visual plan
   docs        [-s server] [-p passphrase] [-t ttl|--no-expiry] <file|dir>    Share encrypted generic documents
+  list        [-m master] [--show-secrets] [--refresh] [-s server]          List shares created on this machine
+  rekey       [-s server] [-p newpass] [-m master] <id|url>                  Reset a share's passphrase (re-key in place)
   key-gen     [key]                                                         Generate or set a passphrase
   key-get                                                                   Print current passphrase
 
 TTL examples: 12h, 7d, 30m. Server default is 7d.
 Use --no-expiry to keep the share indefinitely (mutually exclusive with -t/--ttl).
-The server returns a Manage URL — keep it private; it is required to toggle indefinite retention later.`)
+The server returns a Manage URL — keep it private; it is required to toggle indefinite retention later.
+
+Shares you create are recorded locally in ~/.agentgate/shares.json. Set -m or
+AGENTGATE_MASTER_PASSPHRASE to also store each share's passphrase (encrypted) so
+'agentgate list --show-secrets' and 'agentgate rekey' can use it.`)
 }
 
-// parseFlags extracts -s, -p, -t, and --no-expiry flags from args, returning
-// server, passphrase, ttl, noExpiry, and remaining positional args.
-func parseFlags(args []string) (server, passphrase, ttl string, noExpiry bool, rest []string) {
+// parseFlags extracts -s, -p, -m, -t, and --no-expiry flags from args, returning
+// server, passphrase, master, ttl, noExpiry, and remaining positional args.
+func parseFlags(args []string) (server, passphrase, master, ttl string, noExpiry bool, rest []string) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-s":
@@ -118,6 +132,11 @@ func parseFlags(args []string) (server, passphrase, ttl string, noExpiry bool, r
 		case "-p":
 			if i+1 < len(args) {
 				passphrase = args[i+1]
+				i++
+			}
+		case "-m", "--master":
+			if i+1 < len(args) {
+				master = args[i+1]
 				i++
 			}
 		case "-t", "--ttl":
@@ -224,11 +243,11 @@ func extractFilename(patch string) string {
 	return "unknown"
 }
 
-func encryptAndPost(server, endpoint string, payload any, passphrase, ttl string, noExpiry bool) {
-	encryptAndPostMode(server, endpoint, payload, passphrase, ttl, noExpiry, "")
+func encryptAndPost(server, endpoint string, payload any, passphrase, master, ttl string, noExpiry bool) {
+	encryptAndPostMode(server, endpoint, payload, passphrase, master, ttl, noExpiry, "")
 }
 
-func encryptAndPostMode(server, endpoint string, payload any, passphrase, ttl string, noExpiry bool, displayMode string) {
+func encryptAndPostMode(server, endpoint string, payload any, passphrase, master, ttl string, noExpiry bool, displayMode string) {
 	if noExpiry && ttl != "" {
 		fmt.Fprintln(os.Stderr, "error: --no-expiry cannot be combined with -t/--ttl")
 		os.Exit(1)
@@ -275,7 +294,76 @@ func encryptAndPostMode(server, endpoint string, payload any, passphrase, ttl st
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	printCreateResponse(respBody, server, displayMode)
+	result := printCreateResponse(respBody, server, displayMode)
+	if result != nil {
+		recordShare(result, payload, endpoint, displayMode, server, passphrase, master, ttl, noExpiry)
+	}
+}
+
+// recordShare appends the just-created share to the local owner registry
+// (~/.agentgate/shares.json). Best-effort: registry problems warn but never
+// fail the create. The passphrase is stored only when a master passphrase is
+// available (flag/env), encrypted under it.
+func recordShare(result *createResult, payload any, endpoint, displayMode, server, passphrase, masterFlag, ttl string, noExpiry bool) {
+	kind := "files"
+	if strings.Contains(endpoint, "/api/diff") {
+		kind = "diff"
+	}
+	display := displayMode
+	if display == "" {
+		display = kind
+	}
+
+	title := ""
+	switch p := payload.(type) {
+	case DiffPayload:
+		title = p.Title
+	case PlanPayload:
+		title = p.Title
+	}
+
+	var expiresAt string
+	if !noExpiry {
+		seconds := int64(defaultTTLSeconds)
+		if ttl != "" {
+			if s, err := parseTTLSeconds(ttl); err == nil {
+				seconds = s
+			}
+		}
+		expiresAt = time.Now().Add(time.Duration(seconds) * time.Second).UTC().Format(time.RFC3339)
+	}
+
+	rec := shareRecord{
+		ID:           result.ID,
+		Kind:         kind,
+		Display:      display,
+		Title:        title,
+		Server:       server,
+		PreviewURL:   result.PreviewURL,
+		ManageURL:    result.ManageURL,
+		OwnerToken:   result.OwnerToken,
+		NeverExpires: noExpiry,
+		ExpiresAt:    expiresAt,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+
+	master, _ := resolveMaster(masterFlag, false)
+	if master != "" {
+		if blob, err := encryptPassphrase(passphrase, master); err == nil {
+			rec.PassphraseEnc = blob
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: could not encrypt passphrase for registry: %v\n", err)
+		}
+	}
+
+	recsBefore, _ := loadRegistry()
+	if err := upsertRecord(rec); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not update local registry: %v\n", err)
+		return
+	}
+	if master == "" && len(recsBefore) == 0 {
+		fmt.Fprintln(os.Stderr, "hint: set AGENTGATE_MASTER_PASSPHRASE (or -m) to also save each share's passphrase to your local registry — see `agentgate list`.")
+	}
 }
 
 // rebaseURL rewrites the scheme/host of rawURL to match the server the request
@@ -303,10 +391,20 @@ func rebaseURL(rawURL, server string) string {
 	return u.String()
 }
 
-// printCreateResponse decodes the server response and, when successful,
-// prints a friendly summary including the manage URL. Falls back to raw
-// output on parse failure so debugging stays possible.
-func printCreateResponse(body []byte, server string, displayMode string) {
+// createResult holds the display-adjusted URLs and identifiers parsed from a
+// successful create response, for recording into the local registry.
+type createResult struct {
+	PreviewURL string
+	ManageURL  string
+	ID         string
+	OwnerToken string
+}
+
+// printCreateResponse decodes the server response and, when successful, prints a
+// friendly summary including the manage URL and returns the parsed result.
+// Falls back to raw output on parse failure (returns nil) so debugging stays
+// possible; exits on a server error.
+func printCreateResponse(body []byte, server string, displayMode string) *createResult {
 	var parsed struct {
 		Success bool `json:"success"`
 		Data    struct {
@@ -319,7 +417,7 @@ func printCreateResponse(body []byte, server string, displayMode string) {
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil || (!parsed.Success && parsed.Error == "" && parsed.Data.PreviewURL == "") {
 		fmt.Println(string(body))
-		return
+		return nil
 	}
 	if !parsed.Success {
 		fmt.Fprintf(os.Stderr, "server error: %s\n", parsed.Error)
@@ -347,10 +445,16 @@ func printCreateResponse(body []byte, server string, displayMode string) {
 		fmt.Printf("Manage URL:  %s\n", manageURL)
 		fmt.Println("(Keep the Manage URL private — it lets you toggle indefinite retention on this share.)")
 	}
+	return &createResult{
+		PreviewURL: previewURL,
+		ManageURL:  manageURL,
+		ID:         parsed.Data.ID,
+		OwnerToken: parsed.Data.OwnerToken,
+	}
 }
 
 func runGitLatest(args []string) {
-	serverFlag, passFlag, ttlFlag, noExpiry, _ := parseFlags(args)
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, _ := parseFlags(args)
 	server, err := resolveServer(serverFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -380,11 +484,11 @@ func runGitLatest(args []string) {
 		Files: files,
 	}
 
-	encryptAndPost(server, "/api/diff", payload, passphrase, ttlFlag, noExpiry)
+	encryptAndPost(server, "/api/diff", payload, passphrase, masterFlag, ttlFlag, noExpiry)
 }
 
 func runGitStaged(args []string) {
-	serverFlag, passFlag, ttlFlag, noExpiry, _ := parseFlags(args)
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, _ := parseFlags(args)
 	server, err := resolveServer(serverFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -408,11 +512,11 @@ func runGitStaged(args []string) {
 		Files: files,
 	}
 
-	encryptAndPost(server, "/api/diff", payload, passphrase, ttlFlag, noExpiry)
+	encryptAndPost(server, "/api/diff", payload, passphrase, masterFlag, ttlFlag, noExpiry)
 }
 
 func runFiles(args []string) {
-	serverFlag, passFlag, ttlFlag, noExpiry, paths := parseFlags(args)
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, paths := parseFlags(args)
 	server, err := resolveServer(serverFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -443,7 +547,7 @@ func runFiles(args []string) {
 	}
 
 	payload := FilesPayload{Files: files}
-	encryptAndPost(server, "/api/files", payload, passphrase, ttlFlag, noExpiry)
+	encryptAndPost(server, "/api/files", payload, passphrase, masterFlag, ttlFlag, noExpiry)
 }
 
 // binaryExt lists extensions whose raw bytes do not survive being stored as a
@@ -456,7 +560,7 @@ var binaryExt = map[string]bool{
 }
 
 func runWebapp(args []string) {
-	serverFlag, passFlag, ttlFlag, noExpiry, paths := parseFlags(args)
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, paths := parseFlags(args)
 	server, err := resolveServer(serverFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -528,7 +632,7 @@ func runWebapp(args []string) {
 	}
 
 	payload := FilesPayload{Files: files}
-	encryptAndPostMode(server, "/api/files", payload, passphrase, ttlFlag, noExpiry, "app")
+	encryptAndPostMode(server, "/api/files", payload, passphrase, masterFlag, ttlFlag, noExpiry, "app")
 }
 
 func runPlan(args []string) {
@@ -540,7 +644,7 @@ func runDocs(args []string) {
 }
 
 func runDocumentBundle(args []string, kind, displayMode string) {
-	serverFlag, passFlag, ttlFlag, noExpiry, paths := parseFlags(args)
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, paths := parseFlags(args)
 	server, err := resolveServer(serverFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -628,7 +732,7 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 		Files:       files,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	encryptAndPostMode(server, "/api/files", payload, passphrase, ttlFlag, noExpiry, displayMode)
+	encryptAndPostMode(server, "/api/files", payload, passphrase, masterFlag, ttlFlag, noExpiry, displayMode)
 }
 
 func runKeyGen(args []string) {

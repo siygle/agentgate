@@ -121,6 +121,42 @@ async function main() {
   body = await r.json();
   check("PATCH back to expiring -> 200 with reset expires_at", r.status === 200 && typeof body.data?.expires_at === "string" && body.data.expires_at.length > 0);
 
+  // --- put (re-key: replace ciphertext) ---
+  const rekeyed = {
+    encrypted_data: { ciphertext: "cmVrZXllZA==", iv: "bmV3LWl2AAAA", salt: "bmV3LXNhbHQ=" },
+  };
+  r = await fetch(`${BASE}/api/files/${fileId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer wrong-token" },
+    body: JSON.stringify(rekeyed),
+  });
+  check("PUT wrong token -> 401", r.status === 401, `got ${r.status}`);
+
+  r = await fetch(`${BASE}/api/files/${fileId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rekeyed),
+  });
+  check("PUT no token -> 401", r.status === 401, `got ${r.status}`);
+
+  r = await fetch(`${BASE}/api/files/${fileId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileToken}` },
+    body: JSON.stringify({ encrypted_data: { ciphertext: "abc", iv: "", salt: "y" } }),
+  });
+  check("PUT missing ciphertext fields -> 400", r.status === 400, `got ${r.status}`);
+
+  r = await fetch(`${BASE}/api/files/${fileId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${fileToken}` },
+    body: JSON.stringify(rekeyed),
+  });
+  check("PUT valid token -> 200", r.status === 200, `got ${r.status}`);
+
+  r = await fetch(`${BASE}/api/files/${fileId}`);
+  body = await r.json();
+  check("GET after put: ciphertext replaced", body.data?.encrypted_data?.ciphertext === rekeyed.encrypted_data.ciphertext);
+
   // --- pages ---
   r = await fetch(`${BASE}/`);
   check("GET / -> 200 html", r.status === 200 && (r.headers.get("content-type") || "").includes("text/html"));

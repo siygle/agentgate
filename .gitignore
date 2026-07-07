@@ -2,6 +2,7 @@
 bin/
 /cli
 /server
+/agentgate
 
 # Database
 *.db

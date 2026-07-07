@@ -8,6 +8,7 @@ import {
   getShare,
   getMetaForUpdate,
   setNeverExpires,
+  replaceShareData,
   deleteExpired,
   nowSeconds,
   DEFAULT_TTL_SECONDS,
@@ -24,7 +25,7 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PATCH", "PUT", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   }),
 );
@@ -199,6 +200,46 @@ async function handleUpdate(c: Ctx, kind: Kind): Promise<Response> {
 
 app.patch("/api/diff/:id", (c) => handleUpdate(c, "diff"));
 app.patch("/api/files/:id", (c) => handleUpdate(c, "files"));
+
+// ---------------------------------------------------------------------------
+// API: put (replace ciphertext — "reset passphrase" / re-key)
+// ---------------------------------------------------------------------------
+
+async function handleReplace(c: Ctx, kind: Kind): Promise<Response> {
+  const id = c.req.param("id") ?? "";
+  const token = extractBearerToken(c.req.header("Authorization") ?? null);
+  if (!token) return fail(c, "missing bearer token", 401);
+
+  let body: CreateBody;
+  try {
+    body = await c.req.json<CreateBody>();
+  } catch {
+    return fail(c, "invalid JSON body", 400);
+  }
+  const ed = body.encrypted_data;
+  if (!ed || !ed.ciphertext || !ed.iv || !ed.salt) {
+    return fail(c, "encrypted_data must include non-empty ciphertext, iv, and salt", 400);
+  }
+
+  const row = await getMetaForUpdate(c.env, kind, id);
+  if (!row) return fail(c, "not found", 404);
+
+  const storedHash = row.owner_token_hash ?? "";
+  if (!storedHash || !(await verifyOwnerToken(token, storedHash))) {
+    return fail(c, "invalid token", 401);
+  }
+
+  const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
+  try {
+    await replaceShareData(c.env, kind, id, encJson);
+  } catch {
+    return fail(c, "internal server error", 500);
+  }
+  return ok(c, { id }, 200);
+}
+
+app.put("/api/diff/:id", (c) => handleReplace(c, "diff"));
+app.put("/api/files/:id", (c) => handleReplace(c, "files"));
 
 // ---------------------------------------------------------------------------
 // Entry point + scheduled cleanup

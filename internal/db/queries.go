@@ -102,6 +102,27 @@ func SetFileBundleNeverExpires(db *sql.DB, id string, neverExpires bool, newExpi
 	return err
 }
 
+// UpdateDiffEncryptedData overwrites the encrypted blob of a diff record,
+// leaving expiry, never_expires, and owner_token_hash untouched. Used for
+// in-place re-keying (changing the passphrase).
+func UpdateDiffEncryptedData(db *sql.DB, id, encryptedData string) error {
+	_, err := db.Exec(
+		`UPDATE diffs SET encrypted_data = ? WHERE id = ?`,
+		encryptedData, id,
+	)
+	return err
+}
+
+// UpdateFileBundleEncryptedData overwrites the encrypted blob of a file bundle
+// record (in-place re-key).
+func UpdateFileBundleEncryptedData(db *sql.DB, id, encryptedData string) error {
+	_, err := db.Exec(
+		`UPDATE file_bundles SET encrypted_data = ? WHERE id = ?`,
+		encryptedData, id,
+	)
+	return err
+}
+
 // DeleteExpired removes expired records from both diffs and file_bundles tables.
 // Records marked never_expires=1 are skipped. It returns the total number of
 // deleted rows.

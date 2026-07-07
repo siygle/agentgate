@@ -162,6 +162,28 @@ export async function setNeverExpires(
     .run();
 }
 
+// replaceShareData overwrites the encrypted blob of an existing share, keeping
+// all metadata (expiry, never_expires, owner token) intact. It writes to
+// whichever storage the record already uses — R2 when the row has an r2_key and
+// the binding is available, otherwise the D1 column — mirroring getShare's read
+// logic so re-keying works for both D1-only and hybrid records.
+export async function replaceShareData(
+  env: Env,
+  kind: Kind,
+  id: string,
+  encJson: string,
+): Promise<void> {
+  const row = await getMeta(env, kind, id);
+  if (!row) return;
+  if (row.r2_key && env.BLOBS) {
+    await env.BLOBS.put(row.r2_key, encJson);
+    return;
+  }
+  await env.DB.prepare(`UPDATE ${TABLE[kind]} SET encrypted_data = ? WHERE id = ?`)
+    .bind(encJson, id)
+    .run();
+}
+
 // deleteExpired removes expired rows from both tables (and their R2 blobs, for
 // rows that have one). Rows with never_expires = 1 are skipped. Returns the
 // number of deleted records.

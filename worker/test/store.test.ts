@@ -5,6 +5,7 @@ import {
   createShare,
   getShare,
   setNeverExpires,
+  replaceShareData,
   deleteExpired,
   nowSeconds,
   useR2,
@@ -70,6 +71,30 @@ describe("cross-mode reads", () => {
     // whenever the row has no inline blob and the binding is present.
     const rec = await getShare(d1Env, "diff", "XMODE1");
     expect(rec!.encrypted_data).toEqual({ ciphertext: "ct", iv: "iv", salt: "salt" });
+  });
+});
+
+describe("replaceShareData (re-key)", () => {
+  const enc2 = JSON.stringify({ ciphertext: "ct2", iv: "iv2", salt: "salt2" });
+
+  it("overwrites the D1 blob, keeping metadata (D1-only mode)", async () => {
+    await createShare(d1Env, "files", "RK1D01", enc, nowSeconds() + 3600, false, "h");
+    await replaceShareData(d1Env, "files", "RK1D01", enc2);
+    const rec = await getShare(d1Env, "files", "RK1D01");
+    expect(rec!.encrypted_data).toEqual({ ciphertext: "ct2", iv: "iv2", salt: "salt2" });
+    expect(rec!.never_expires).toBe(false);
+    // No stray R2 object for a D1-only record.
+    expect(await env.BLOBS!.get("files/RK1D01")).toBeNull();
+  });
+
+  it("overwrites the R2 blob in place (hybrid mode)", async () => {
+    await createShare(r2Env, "files", "RK1R01", enc, nowSeconds() + 3600, false, "h");
+    await replaceShareData(r2Env, "files", "RK1R01", enc2);
+    const rec = await getShare(r2Env, "files", "RK1R01");
+    expect(rec!.encrypted_data).toEqual({ ciphertext: "ct2", iv: "iv2", salt: "salt2" });
+    const obj = await env.BLOBS!.get("files/RK1R01");
+    expect(obj).not.toBeNull();
+    expect(await obj!.text()).toBe(enc2);
   });
 });
 

@@ -62,6 +62,8 @@ func New(db *sql.DB, baseURL string, staticFS fs.FS) *Server {
 	r.Get("/api/files/{id}", s.handleGetFiles)
 	r.Patch("/api/diff/{id}", s.handleUpdateDiff)
 	r.Patch("/api/files/{id}", s.handleUpdateFiles)
+	r.Put("/api/diff/{id}", s.handleReplaceDiff)
+	r.Put("/api/files/{id}", s.handleReplaceFiles)
 
 	s.router = r
 	return s
