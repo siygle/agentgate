@@ -115,8 +115,77 @@
       el.setAttribute(attr, toDataURI(found, el.getAttribute(attr)));
     });
 
+    // Inject a tiny height reporter so the (sandboxed, opaque-origin) app can
+    // tell the parent its full content height on request via postMessage. This
+    // keeps the security sandbox intact — no allow-same-origin needed — and lets
+    // PDF export expand the iframe to full height so printing paginates instead
+    // of clipping to one page. It only responds to an explicit request message.
+    var reporter = doc.createElement("script");
+    reporter.textContent =
+      "(function(){function h(){var d=document,e=d.documentElement,b=d.body;" +
+      "return Math.max(e?e.scrollHeight:0,e?e.offsetHeight:0,b?b.scrollHeight:0,b?b.offsetHeight:0);}" +
+      "window.addEventListener('message',function(ev){if(ev&&ev.data&&ev.data.__agentgate_request_height){" +
+      "try{parent.postMessage({__agentgate_app_height:h()},'*');}catch(e){}}});})();";
+    (doc.body || doc.documentElement).appendChild(reporter);
+
     var html = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
     return { html: html };
+  }
+
+  // exportAppPdf expands the sandboxed iframe to its full reported height, prints
+  // (so the PDF spans multiple pages), then restores the on-screen height. Falls
+  // back to a plain print if the app does not report a height in time.
+  function exportAppPdf(frame) {
+    if (!frame || !frame.contentWindow) {
+      window.print();
+      return;
+    }
+    var restoreHeight = frame.style.height;
+    var started = false;
+
+    function afterPrint() {
+      frame.style.height = restoreHeight;
+      document.body.classList.remove("agentgate-printing-app");
+      window.removeEventListener("afterprint", afterPrint);
+    }
+
+    // expandAndPrint grows the iframe to full content height so Chrome paginates
+    // it, then restores on afterprint.
+    function expandAndPrint(fullHeight) {
+      if (started) return;
+      started = true;
+      window.removeEventListener("message", onMsg);
+      frame.style.height = fullHeight + "px";
+      document.body.classList.add("agentgate-printing-app");
+      window.addEventListener("afterprint", afterPrint);
+      setTimeout(function () {
+        window.print();
+      }, 200);
+    }
+
+    // plainPrint is the best-effort fallback when no height is reported: print
+    // the page as-is without touching layout (same as before — may clip).
+    function plainPrint() {
+      if (started) return;
+      started = true;
+      window.removeEventListener("message", onMsg);
+      window.print();
+    }
+
+    function onMsg(ev) {
+      if (!ev || !ev.data || typeof ev.data.__agentgate_app_height !== "number") return;
+      expandAndPrint(Math.max(ev.data.__agentgate_app_height, 100));
+    }
+
+    window.addEventListener("message", onMsg);
+    try {
+      frame.contentWindow.postMessage({ __agentgate_request_height: true }, "*");
+    } catch (e) {
+      plainPrint();
+      return;
+    }
+    // Fallback: if the app never reports its height, print best-effort.
+    setTimeout(plainPrint, 800);
   }
 
   function renderAppViewer(data, expiresAt) {
@@ -182,17 +251,24 @@
     }
 
     if (window.AgentGateExport) {
-      window.AgentGateExport.renderExportControl(headerRight, {
+      var exportCtx = {
         kind: "app",
         title: data.title || "webapp",
-        // The running app is a sandboxed iframe that cannot be re-rendered
-        // off-screen, so PDF is a best-effort print of the live page.
         multi: false,
-        pdfLive: true,
         sources: files.map(function (f) {
           return { name: f.title, content: f.content };
         }),
-      });
+      };
+      if (result.error) {
+        // Nothing rendered to expand; fall back to a plain print.
+        exportCtx.pdfLive = true;
+      } else {
+        // Expand the sandboxed iframe to full height, then print (paginates).
+        exportCtx.pdfCustom = function () {
+          exportAppPdf(frame);
+        };
+      }
+      window.AgentGateExport.renderExportControl(headerRight, exportCtx);
     }
 
     app.innerHTML = "";
