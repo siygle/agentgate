@@ -181,6 +181,20 @@
       viewer.appendChild(frame);
     }
 
+    if (window.AgentGateExport) {
+      window.AgentGateExport.renderExportControl(headerRight, {
+        kind: "app",
+        title: data.title || "webapp",
+        // The running app is a sandboxed iframe that cannot be re-rendered
+        // off-screen, so PDF is a best-effort print of the live page.
+        multi: false,
+        pdfLive: true,
+        sources: files.map(function (f) {
+          return { name: f.title, content: f.content };
+        }),
+      });
+    }
+
     app.innerHTML = "";
     app.appendChild(viewer);
   }

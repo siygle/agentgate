@@ -1514,3 +1514,145 @@ a:hover {
     max-width: 980px;
   }
 }
+
+/* --- Export control (Save as PDF / Download source) --- */
+.export-trigger {
+  position: relative;
+  display: inline-flex;
+}
+
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.export-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg);
+}
+
+.export-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.export-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 50;
+  width: 15rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  padding: 0.75rem;
+}
+
+.export-section {
+  margin-bottom: 0.75rem;
+}
+
+.export-section:last-child {
+  margin-bottom: 0;
+}
+
+.export-label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  margin-bottom: 0.375rem;
+}
+
+.export-item {
+  display: block;
+  width: 100%;
+  padding: 0.4375rem 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  text-align: left;
+  background: var(--bg-secondary);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.export-item:last-child {
+  margin-bottom: 0;
+}
+
+.export-item:hover {
+  background: var(--bg-tertiary);
+}
+
+/* --- Print / Save as PDF --- */
+/* The print container is built on demand by export.js and stays hidden on
+   screen. During printing, chrome is hidden and only the rebuilt content
+   (which reuses each viewer's own render output + these same styles) shows,
+   so the PDF matches the on-screen rendering. */
+#agentgate-print-root {
+  display: none;
+}
+
+@media print {
+  /* Interactive chrome — hidden whether it sits in the page header or inside
+     cloned viewer content. */
+  .settings-trigger,
+  .export-trigger,
+  .file-viewer-header,
+  .plan-sidebar,
+  .plan-feedback,
+  .passphrase-dialog,
+  .plan-wireframe-toolbar,
+  .tab-bar,
+  .copy-btn,
+  .diff-toolbar {
+    display: none !important;
+  }
+
+  /* Content-viewer printing: hide the live app, show the rebuilt print root. */
+  body.agentgate-printing #app {
+    display: none !important;
+  }
+  body.agentgate-printing #agentgate-print-root {
+    display: block;
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+
+  /* Only permitted content adjustment: wrap long code and avoid splitting
+     blocks across pages (paper has no horizontal scroll). Not a restyle. */
+  pre,
+  .markdown-body pre,
+  .code-content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+}

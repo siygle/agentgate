@@ -54,7 +54,7 @@
     try {
       mermaid.initialize({ startOnLoad: false, theme: window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default" });
       var nodes = container.querySelectorAll(".mermaid");
-      if (nodes.length) mermaid.run({ nodes: nodes });
+      if (nodes.length) return mermaid.run({ nodes: nodes });
     } catch (e) {
       console.warn("Mermaid render failed", e);
     }
@@ -271,20 +271,65 @@
 
     var body = document.createElement("div");
     body.className = "plan-layout";
+
+    // (export control is wired below once renderPrint/entry are in scope)
     if (files.length <= 1) body.classList.add("no-sidebar");
     if (!isVisualPlan) body.classList.add("docs-mode");
 
     var article = document.createElement("article");
     article.className = "markdown-body plan-document";
 
+    // Shared render pipeline — used for the live view, and reused verbatim for
+    // PDF export so the printed output matches the screen exactly.
+    function renderContentInto(node, content) {
+      node.innerHTML = renderMarkdown(content || "");
+      attachCodeHighlight(node);
+      renderWireframes(node);
+      return renderMermaid(node); // may return a promise (async diagrams)
+    }
+
     function renderFile(file) {
       entry = file;
-      article.innerHTML = renderMarkdown(file.content || "");
-      attachCodeHighlight(article);
-      renderWireframes(article);
-      renderMermaid(article);
+      renderContentInto(article, file.content || "");
       var buttons = body.querySelectorAll(".plan-file-tree button");
       for (var i = 0; i < buttons.length; i++) buttons[i].classList.toggle("active", buttons[i].textContent === file.title);
+    }
+
+    function renderPrint(root, scope) {
+      if (scope === "current") {
+        root.appendChild(article.cloneNode(true));
+        return;
+      }
+      var promises = [];
+      files.forEach(function (f) {
+        if (files.length > 1) {
+          var head = document.createElement("h2");
+          head.className = "plan-print-filename";
+          head.textContent = f.title || "untitled";
+          root.appendChild(head);
+        }
+        var sec = document.createElement("article");
+        sec.className = "markdown-body plan-document";
+        root.appendChild(sec);
+        var p = renderContentInto(sec, f.content || "");
+        if (p) promises.push(p);
+      });
+      return Promise.all(promises);
+    }
+
+    if (window.AgentGateExport) {
+      window.AgentGateExport.renderExportControl(headerRight, {
+        kind: isVisualPlan ? "plan" : "docs",
+        title: titleText,
+        multi: files.length > 1,
+        sources: files.map(function (f) {
+          return { name: f.title, content: f.content };
+        }),
+        getCurrentSource: function () {
+          return { name: entry.title, content: entry.content };
+        },
+        renderPrint: renderPrint,
+      });
     }
 
     if (files.length > 1) body.appendChild(createFileTree(files, entry.title, renderFile));

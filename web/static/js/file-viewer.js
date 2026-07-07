@@ -205,6 +205,7 @@
     var files = data.files || [];
     var MD = window.AgentGateMarkdown;
     var activeIndex = 0;
+    var currentContentNode = null;
 
     var viewer = document.createElement("div");
     viewer.className = "file-viewer";
@@ -263,21 +264,23 @@
     var contentPanel = document.createElement("div");
     contentPanel.className = "file-content desktop-only";
 
-    function renderDesktopContent(index) {
-      var file = files[index];
+    // Build one file's rendered content as a standalone node. Used for the live
+    // desktop panel and reused verbatim for PDF export so output matches screen.
+    function buildFileContentNode(file) {
       var filename = file.title || "untitled";
       var lang = detectLanguage(filename);
       var isMd = MD && MD.isMarkdown(filename);
 
-      contentPanel.innerHTML = "";
+      var wrap = document.createElement("div");
+      wrap.className = "file-content-block";
 
       var headerBar = document.createElement("div");
       headerBar.className = "file-header-bar";
       headerBar.innerHTML = "<span>" + escapeHtml(filename) + "</span>";
-      contentPanel.appendChild(headerBar);
+      wrap.appendChild(headerBar);
 
       if (isMd) {
-        renderMarkdownPanel(contentPanel, file, lang);
+        renderMarkdownPanel(wrap, file, lang);
       } else {
         var codeBlock = document.createElement("pre");
         codeBlock.className = "code-content";
@@ -285,8 +288,25 @@
           '<code class="hljs">' +
           highlightCode(file.content || "", lang) +
           "</code>";
-        contentPanel.appendChild(codeBlock);
+        wrap.appendChild(codeBlock);
       }
+      return wrap;
+    }
+
+    function renderDesktopContent(index) {
+      contentPanel.innerHTML = "";
+      currentContentNode = buildFileContentNode(files[index]);
+      contentPanel.appendChild(currentContentNode);
+    }
+
+    function renderPrint(root, scope) {
+      if (scope === "current") {
+        if (currentContentNode) root.appendChild(currentContentNode.cloneNode(true));
+        return;
+      }
+      files.forEach(function (file) {
+        root.appendChild(buildFileContentNode(file));
+      });
     }
 
     // Build sidebar items
@@ -367,6 +387,22 @@
 
     body.appendChild(mobileDiv);
     viewer.appendChild(body);
+
+    if (window.AgentGateExport) {
+      window.AgentGateExport.renderExportControl(headerRight, {
+        kind: "files",
+        title: data.title || "files",
+        multi: files.length > 1,
+        sources: files.map(function (f) {
+          return { name: f.title, content: f.content };
+        }),
+        getCurrentSource: function () {
+          var f = files[activeIndex] || files[0];
+          return f ? { name: f.title, content: f.content } : null;
+        },
+        renderPrint: renderPrint,
+      });
+    }
 
     app.innerHTML = "";
     app.appendChild(viewer);

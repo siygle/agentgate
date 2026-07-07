@@ -494,6 +494,20 @@
     renderFiles(currentMode);
     container.appendChild(filesContainer);
 
+    // PDF export: clone the already-rendered diff (same tables, same highlight
+    // and +/- colors as on screen) and expand any collapsed sections so the
+    // export is complete.
+    function renderPrint(root) {
+      var clone = filesContainer.cloneNode(true);
+      clone.querySelectorAll(".diff-file-content.collapsed").forEach(function (el) {
+        el.classList.remove("collapsed");
+      });
+      clone.querySelectorAll(".diff-collapse-arrow.collapsed").forEach(function (el) {
+        el.classList.remove("collapsed");
+      });
+      root.appendChild(clone);
+    }
+
     // Toggle handlers
     splitBtn.addEventListener("click", function () {
       splitBtn.classList.add("active");
@@ -528,6 +542,18 @@
         el.classList.add("collapsed");
       });
     });
+
+    if (window.AgentGateExport) {
+      window.AgentGateExport.renderExportControl(headerRight, {
+        kind: "diff",
+        title: data.title || "diff",
+        multi: false,
+        sources: (data.files || []).map(function (f) {
+          return { name: f.filename, content: f.patch };
+        }),
+        renderPrint: renderPrint,
+      });
+    }
 
     app.innerHTML = "";
     app.appendChild(container);
