@@ -1635,18 +1635,29 @@ a:hover {
     display: block;
   }
 
+  /* Content must flow across pages. On screen many blocks are scroll
+     containers — <pre> with overflow-x:auto (which makes overflow-y compute to
+     auto) and diff blocks with overflow:hidden. A scroll container only prints
+     its first page and clips the rest, so neutralise overflow/height caps for
+     everything inside the print root. */
+  #agentgate-print-root,
+  #agentgate-print-root * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
   @page {
     margin: 1.5cm;
   }
 
-  /* Only permitted content adjustment: wrap long code and avoid splitting
-     blocks across pages (paper has no horizontal scroll). Not a restyle. */
+  /* Wrap long code instead of horizontal-clipping (paper has no scroll). Do NOT
+     add break-inside:avoid here — code blocks routinely exceed one page and
+     must be allowed to break. */
   pre,
   .markdown-body pre,
   .code-content {
     white-space: pre-wrap;
     word-wrap: break-word;
-    break-inside: avoid;
   }
 
   h1,
