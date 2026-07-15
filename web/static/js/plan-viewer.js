@@ -29,6 +29,56 @@
     return files[0] || { title: "plan", content: "" };
   }
 
+  // Asset resolution: rewrite local image/media references in rendered markdown
+  // (e.g. ![](diagram.png)) to data: URIs from the bundle, so docs that ship
+  // their own images/media render instead of showing broken links. Text assets
+  // (missing encoding) are percent-encoded; binary assets carry encoding:"base64".
+  var ASSET_MIME = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+    webp: "image/webp", ico: "image/x-icon", bmp: "image/bmp", svg: "image/svg+xml",
+    mp3: "audio/mpeg", wav: "audio/wav", mp4: "video/mp4", webm: "video/webm",
+  };
+
+  function normalizeAssetKey(path) {
+    return (path || "").replace(/^\.?\//, "").replace(/[?#].*$/, "");
+  }
+
+  function assetExt(name) {
+    return (name || "").split(".").pop().toLowerCase();
+  }
+
+  function buildAssetMap(files) {
+    var map = {};
+    (files || []).forEach(function (f) {
+      var name = f.title || "";
+      var entry = { content: f.content || "", encoding: f.encoding || "" };
+      map[normalizeAssetKey(name)] = entry;
+      var base = name.split("/").pop();
+      if (base && !(normalizeAssetKey(base) in map)) map[normalizeAssetKey(base)] = entry;
+    });
+    return map;
+  }
+
+  function assetToDataURI(entry, name) {
+    var isB64 = entry && entry.encoding === "base64";
+    var mime = ASSET_MIME[assetExt(name)] || (isB64 ? "application/octet-stream" : "text/plain");
+    if (isB64) return "data:" + mime + ";base64," + entry.content;
+    return "data:" + mime + ";charset=utf-8," + encodeURIComponent(entry.content);
+  }
+
+  function resolveAssets(container, assetMap) {
+    if (!container || !assetMap) return;
+    var els = container.querySelectorAll("img[src], source[src], video[src], audio[src]");
+    Array.prototype.forEach.call(els, function (el) {
+      var ref = el.getAttribute("src");
+      if (!ref || /^(https?:|data:|blob:|#)/i.test(ref)) return;
+      var key = normalizeAssetKey(ref);
+      var entry = assetMap[key] || assetMap[key.split("/").pop()];
+      if (!entry) return;
+      el.setAttribute("src", assetToDataURI(entry, ref));
+    });
+  }
+
   function escapeHtml(str) {
     return String(str || "")
       .replace(/&/g, "&amp;")
@@ -71,7 +121,11 @@
       ".muted{color:#57606a}.row{display:flex;gap:12px;align-items:center}.col{display:flex;flex-direction:column;gap:12px}" +
       "*{box-sizing:border-box}" +
       "</style>";
-    return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" + css + "</head><body>" + html + "</body></html>";
+    // Wireframes are static HTML with no scripts (the iframe is sandbox="" too).
+    // A tight CSP blocks any external image/style/font a wireframe might reference,
+    // so previewing a wireframe can never leak a request off the decryption page.
+    var csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'\">";
+    return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" + csp + css + "</head><body>" + html + "</body></html>";
   }
 
   function renderWireframes(container) {
@@ -229,6 +283,7 @@
     if (!app) return;
 
     var files = data.files || [];
+    var assetMap = buildAssetMap(files);
     var entry = pickEntry(data);
     var isVisualPlan = (data.kind || "") === "visual-plan" || (data.kind || "") === "visual-recap";
     var docLabel = isVisualPlan ? "visual plan" : "documents";
@@ -283,6 +338,7 @@
     // PDF export so the printed output matches the screen exactly.
     function renderContentInto(node, content) {
       node.innerHTML = renderMarkdown(content || "");
+      resolveAssets(node, assetMap);
       attachCodeHighlight(node);
       renderWireframes(node);
       return renderMermaid(node); // may return a promise (async diagrams)
@@ -323,10 +379,10 @@
         title: titleText,
         multi: files.length > 1,
         sources: files.map(function (f) {
-          return { name: f.title, content: f.content };
+          return { name: f.title, content: f.content, encoding: f.encoding };
         }),
         getCurrentSource: function () {
-          return { name: entry.title, content: entry.content };
+          return { name: entry.title, content: entry.content, encoding: entry.encoding };
         },
         renderPrint: renderPrint,
       });

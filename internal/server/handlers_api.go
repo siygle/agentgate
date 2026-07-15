@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +17,52 @@ import (
 	"github.com/siygle/agentgate/internal/db"
 	"github.com/siygle/agentgate/internal/id"
 )
+
+// uploadSlack is headroom above maxUploadBytes for JSON envelope overhead so the
+// explicit size check (which yields a precise 413 message) runs before the hard
+// MaxBytesReader ceiling trips.
+const uploadSlack = 64 << 10
+
+// decodeCreateBody reads a create/replace JSON body under a hard size ceiling,
+// returning ok=false (after writing the response) on malformed or oversized
+// input so callers can simply return.
+func (s *Server) decodeCreateBody(w http.ResponseWriter, r *http.Request, req *createRequest) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxUploadBytes+uploadSlack)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.writeTooLarge(w)
+			return false
+		}
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
+		return false
+	}
+	return true
+}
+
+// encodeAndCheckSize marshals encrypted_data and enforces the per-share size
+// limit, writing a 413 (and returning ok=false) when the blob is too large.
+func (s *Server) encodeAndCheckSize(w http.ResponseWriter, req *createRequest) (string, bool) {
+	encJSON, err := json.Marshal(req.EncryptedData)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return "", false
+	}
+	if int64(len(encJSON)) > s.maxUploadBytes {
+		s.writeTooLarge(w)
+		return "", false
+	}
+	return string(encJSON), true
+}
+
+func (s *Server) writeTooLarge(w http.ResponseWriter) {
+	writeJSON(w, http.StatusRequestEntityTooLarge, apiResponse{
+		Success: false,
+		Error: fmt.Sprintf(
+			"encrypted payload exceeds the %d byte limit; set AGENTGATE_MAX_UPLOAD_BYTES (or a filesystem blob dir) to raise it",
+			s.maxUploadBytes),
+	})
+}
 
 const defaultExpiry = 7 * 24 * time.Hour
 
@@ -145,11 +193,7 @@ func (s *Server) handleCreateFiles(w http.ResponseWriter, r *http.Request) {
 // handleCreate is the shared body for both diff and file-bundle creation.
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind string) {
 	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, apiResponse{
-			Success: false,
-			Error:   "invalid JSON body",
-		})
+	if !s.decodeCreateBody(w, r, &req) {
 		return
 	}
 
@@ -161,14 +205,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 		return
 	}
 
-	encJSON, err := json.Marshal(req.EncryptedData)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiResponse{
-			Success: false,
-			Error:   "internal server error",
-		})
+	encJSONStr, ok := s.encodeAndCheckSize(w, &req)
+	if !ok {
 		return
 	}
+	encJSON := []byte(encJSONStr)
 
 	newID := id.Generate()
 
@@ -365,8 +406,7 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 	}
 
 	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
+	if !s.decodeCreateBody(w, r, &req) {
 		return
 	}
 	if req.EncryptedData.Ciphertext == "" || req.EncryptedData.IV == "" || req.EncryptedData.Salt == "" {
@@ -415,9 +455,8 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 		return
 	}
 
-	encJSON, err := json.Marshal(req.EncryptedData)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+	encJSON, ok := s.encodeAndCheckSize(w, &req)
+	if !ok {
 		return
 	}
 

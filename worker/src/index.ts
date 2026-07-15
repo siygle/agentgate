@@ -11,6 +11,7 @@ import {
   replaceShareData,
   deleteExpired,
   nowSeconds,
+  maxUploadBytes,
   DEFAULT_TTL_SECONDS,
   NEVER_EXPIRES_AT,
   type Kind,
@@ -38,8 +39,17 @@ function ok(c: Ctx, data: unknown, status: 200 | 201 = 200) {
   return c.json({ success: true, data }, status);
 }
 
-function fail(c: Ctx, error: string, status: 400 | 401 | 404 | 500) {
+function fail(c: Ctx, error: string, status: 400 | 401 | 404 | 413 | 500) {
   return c.json({ success: false, error }, status);
+}
+
+// tooLarge reports a payload over the active storage mode's per-share limit.
+function tooLarge(c: Ctx, limit: number) {
+  return fail(
+    c,
+    `encrypted payload exceeds the ${limit} byte limit; enable R2 (USE_R2=true) to store larger bundles`,
+    413,
+  );
 }
 
 // servePage returns a static HTML shell (Plan B). The shell's client JS fetches
@@ -95,6 +105,8 @@ async function handleCreate(c: Ctx, kind: Kind): Promise<Response> {
   }
 
   const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
+  const limit = maxUploadBytes(c.env);
+  if (encJson.length > limit) return tooLarge(c, limit);
   const id = generateId();
   const neverExpires = !!body.never_expires;
   const expiredAt = neverExpires
@@ -221,6 +233,10 @@ async function handleReplace(c: Ctx, kind: Kind): Promise<Response> {
     return fail(c, "encrypted_data must include non-empty ciphertext, iv, and salt", 400);
   }
 
+  const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
+  const limit = maxUploadBytes(c.env);
+  if (encJson.length > limit) return tooLarge(c, limit);
+
   const row = await getMetaForUpdate(c.env, kind, id);
   if (!row) return fail(c, "not found", 404);
 
@@ -229,7 +245,6 @@ async function handleReplace(c: Ctx, kind: Kind): Promise<Response> {
     return fail(c, "invalid token", 401);
   }
 
-  const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
   try {
     await replaceShareData(c.env, kind, id, encJson);
   } catch {

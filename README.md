@@ -178,12 +178,13 @@ This first version is designed for Agent-Native-style `/visual-plan` output in l
 
 `agentgate webapp <dir>` encrypts a directory of static files (the same end-to-end encryption as `files`) and returns an **App URL** at `/app/{id}`. After the recipient enters the passphrase, the bundle is decrypted in the browser, assembled into a single self-contained page, and run inside a sandboxed `<iframe>`.
 
-The directory must contain `index.html` at its root. Referenced local stylesheets and scripts (`<link href>`, `<script src>`) are inlined; local `<img>`/SVG references become data URIs.
+The directory must contain `index.html` at its root. Referenced local stylesheets and scripts (`<link href>`, `<script src>`) are inlined; local `<img>`/`<audio>`/`<video>`/SVG and CSS `url(...)`/`@font-face` references become data URIs. Binary assets (PNG/JPG/GIF/WebP, fonts, MP3/MP4, WASM, …) are base64-embedded into the encrypted bundle, so images, fonts, and media render without any external requests.
 
 Limitations (this is for sharing runnable prototypes, not hosting a site):
 
-- **Text assets only.** HTML/CSS/JS/SVG survive; binary assets (PNG, fonts, etc.) are skipped with a warning — embed them as data URIs or external URLs.
-- **Opaque origin.** The iframe runs without `allow-same-origin`, so `localStorage`, cookies, and same-origin `fetch` are unavailable to the app by design.
+- **Must be self-contained.** The framed app runs under a strict Content-Security-Policy (`default-src 'none'; connect-src 'none'; …`) so it **cannot make any network requests** — no `fetch`, XHR, WebSocket, or external images/fonts/scripts. Bundle everything you need; a webapp that relies on calling an external API will not work. This keeps decrypted content from being exfiltrated off the viewer page.
+- **Bundle size.** Binary assets grow the encrypted payload. The CLI warns past a ~1 MB soft budget, and the server enforces a hard limit (Cloudflare D1-only mode ~2 MB per share; raise it with R2 on the Worker, or `AGENTGATE_MAX_UPLOAD_BYTES` on self-host). Oversized uploads are rejected with HTTP 413.
+- **Opaque origin.** The iframe runs without `allow-same-origin`, so `localStorage` and cookies are unavailable to the app by design.
 - The same record is also viewable as a plain file bundle at `/f/{id}`, and the Manage URL controls retention for both views.
 
 Successful uploads print both a public Preview URL and, on supported servers, a private Manage URL:

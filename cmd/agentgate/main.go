@@ -43,10 +43,14 @@ type FilesPayload struct {
 	Files []FilesPayloadFile `json:"files"`
 }
 
-// FilesPayloadFile represents a single file within a files payload.
+// FilesPayloadFile represents a single file within a files payload. Content holds
+// UTF-8 text by default; when Encoding is "base64" it holds the base64-encoded raw
+// bytes of a binary asset (image, font, media). Encoding is omitted for text so
+// older viewers — which treat a missing "encoding" as text — stay compatible.
 type FilesPayloadFile struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Title    string `json:"title"`
+	Content  string `json:"content"`
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // PlanPayload is an encrypted visual plan bundle. It is stored through the
@@ -592,12 +596,52 @@ func runFiles(args []string) {
 }
 
 // binaryExt lists extensions whose raw bytes do not survive being stored as a
-// UTF-8 string in the bundle. They are skipped (with a warning) by runWebapp.
+// UTF-8 string. Files with these extensions are base64-encoded into the bundle
+// (Encoding:"base64") so images, fonts, and media render in the viewer.
 var binaryExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 	".ico": true, ".bmp": true, ".woff": true, ".woff2": true, ".ttf": true,
 	".otf": true, ".eot": true, ".mp3": true, ".mp4": true, ".webm": true,
 	".wav": true, ".pdf": true, ".zip": true, ".wasm": true,
+}
+
+// bundleBudgetBytes is a conservative client-side soft cap on total raw asset
+// bytes in a bundle. Exceeding it only warns — the server enforces the real,
+// backend-specific limit and returns 413. ~1 MB of raw bytes keeps the encrypted
+// bundle under Cloudflare D1's 2 MB per-value hard cap in the default D1-only
+// mode; R2 (Worker) or a filesystem blob dir (self-host) lift that ceiling.
+const bundleBudgetBytes = 1 << 20
+
+// readBundleFile reads one file for a webapp/docs bundle. Binary assets (by
+// extension) are base64-encoded so their bytes survive JSON + encryption; text
+// files stay as UTF-8 and carry no encoding marker. It also returns the raw byte
+// count so callers can track the bundle budget.
+func readBundleFile(path, rel string) (FilesPayloadFile, int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return FilesPayloadFile{}, 0, err
+	}
+	if binaryExt[strings.ToLower(filepath.Ext(path))] {
+		return FilesPayloadFile{
+			Title:    rel,
+			Content:  base64.StdEncoding.EncodeToString(data),
+			Encoding: "base64",
+		}, len(data), nil
+	}
+	return FilesPayloadFile{Title: rel, Content: string(data)}, len(data), nil
+}
+
+// warnIfOverBudget prints a soft warning (never fails) when a bundle's total raw
+// bytes exceed the client-side budget, pointing at the storage escape hatches.
+func warnIfOverBudget(totalBytes int) {
+	if totalBytes <= bundleBudgetBytes {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"warning: bundle is %d KB of raw assets, over the ~%d KB soft budget. "+
+			"The server may reject it (413) in D1-only mode; enable R2 (Worker) or set "+
+			"AGENTGATE_BLOB_DIR (self-host) to store larger bundles.\n",
+		totalBytes/1024, bundleBudgetBytes/1024)
 }
 
 func runWebapp(args []string) {
@@ -626,6 +670,7 @@ func runWebapp(args []string) {
 
 	var files []FilesPayloadFile
 	hasIndex := false
+	totalBytes := 0
 	err = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -640,23 +685,20 @@ func runWebapp(args []string) {
 		if strings.HasPrefix(base, ".") {
 			return nil
 		}
-		if binaryExt[strings.ToLower(filepath.Ext(p))] {
-			fmt.Fprintf(os.Stderr, "warning: skipping binary asset %s (embed it as a data URI or external URL instead)\n", p)
-			return nil
-		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		data, err := os.ReadFile(p)
+		file, n, err := readBundleFile(p, rel)
 		if err != nil {
 			return err
 		}
 		if rel == "index.html" {
 			hasIndex = true
 		}
-		files = append(files, FilesPayloadFile{Title: rel, Content: string(data)})
+		totalBytes += n
+		files = append(files, file)
 		return nil
 	})
 	if err != nil {
@@ -671,6 +713,7 @@ func runWebapp(args []string) {
 		fmt.Fprintln(os.Stderr, "error: no index.html at the root of the directory")
 		os.Exit(1)
 	}
+	warnIfOverBudget(totalBytes)
 
 	payload := FilesPayload{Files: files}
 	encryptAndPostMode(server, "/api/files", payload, passphrase, masterFlag, ttlFlag, noExpiry, generated, "app")
@@ -711,6 +754,7 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 
 	var files []FilesPayloadFile
 	entry := ""
+	totalBytes := 0
 	if info.IsDir() {
 		err = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
 			if err != nil {
@@ -723,7 +767,7 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 				}
 				return nil
 			}
-			if strings.HasPrefix(base, ".") || binaryExt[strings.ToLower(filepath.Ext(p))] {
+			if strings.HasPrefix(base, ".") {
 				return nil
 			}
 			rel, err := filepath.Rel(root, p)
@@ -731,7 +775,7 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			data, err := os.ReadFile(p)
+			file, n, err := readBundleFile(p, rel)
 			if err != nil {
 				return err
 			}
@@ -741,7 +785,8 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 			} else if entry == "" && (strings.HasSuffix(lowerRel, ".mdx") || strings.HasSuffix(lowerRel, ".md")) {
 				entry = rel
 			}
-			files = append(files, FilesPayloadFile{Title: rel, Content: string(data)})
+			totalBytes += n
+			files = append(files, file)
 			return nil
 		})
 		if err != nil {
@@ -749,19 +794,21 @@ func runDocumentBundle(args []string, kind, displayMode string) {
 			os.Exit(1)
 		}
 	} else {
-		data, err := os.ReadFile(root)
+		file, n, err := readBundleFile(root, filepath.Base(root))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", root, err)
 			os.Exit(1)
 		}
 		entry = filepath.Base(root)
-		files = append(files, FilesPayloadFile{Title: entry, Content: string(data)})
+		totalBytes += n
+		files = append(files, file)
 	}
 
 	if len(files) == 0 {
 		fmt.Fprintln(os.Stderr, "error: no usable plan files found")
 		os.Exit(1)
 	}
+	warnIfOverBudget(totalBytes)
 	if entry == "" {
 		entry = files[0].Title
 	}

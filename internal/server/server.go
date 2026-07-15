@@ -4,17 +4,26 @@ import (
 	"database/sql"
 	"io/fs"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+// defaultMaxUploadBytes caps the stored encrypted blob per share on the
+// self-host backend. SQLite has no small per-value limit (unlike Cloudflare
+// D1's 2 MB), so this generous default mainly guards memory; override it with
+// AGENTGATE_MAX_UPLOAD_BYTES when sharing larger bundles (e.g. with a blob dir).
+const defaultMaxUploadBytes = 10 << 20 // 10 MB
+
 // Server holds dependencies and the HTTP router.
 type Server struct {
-	db       *sql.DB
-	router   chi.Router
-	staticFS fs.FS
-	baseURL  string
+	db             *sql.DB
+	router         chi.Router
+	staticFS       fs.FS
+	baseURL        string
+	maxUploadBytes int64
 }
 
 // New creates a Server with all routes registered.
@@ -22,9 +31,10 @@ type Server struct {
 // /static/ (it also holds the static HTML shells: index.html and views/*.html).
 func New(db *sql.DB, baseURL string, staticFS fs.FS) *Server {
 	s := &Server{
-		db:       db,
-		staticFS: staticFS,
-		baseURL:  baseURL,
+		db:             db,
+		staticFS:       staticFS,
+		baseURL:        baseURL,
+		maxUploadBytes: resolveMaxUploadBytes(),
 	}
 
 	r := chi.NewRouter()
@@ -72,4 +82,15 @@ func New(db *sql.DB, baseURL string, staticFS fs.FS) *Server {
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
+}
+
+// resolveMaxUploadBytes reads AGENTGATE_MAX_UPLOAD_BYTES (a positive byte count)
+// or falls back to the default.
+func resolveMaxUploadBytes() int64 {
+	if v := os.Getenv("AGENTGATE_MAX_UPLOAD_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMaxUploadBytes
 }

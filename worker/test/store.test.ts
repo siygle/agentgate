@@ -9,6 +9,9 @@ import {
   deleteExpired,
   nowSeconds,
   useR2,
+  maxUploadBytes,
+  D1_MAX_BLOB_BYTES,
+  R2_MAX_BLOB_BYTES,
   NEVER_EXPIRES_AT,
 } from "../src/store";
 
@@ -24,6 +27,15 @@ describe("useR2 flag", () => {
     expect(useR2(r2Env)).toBe(true);
     expect(useR2({ ...(env as unknown as Env), USE_R2: "true", BLOBS: undefined })).toBe(false);
     expect(useR2({ ...(env as unknown as Env), USE_R2: undefined })).toBe(false);
+  });
+});
+
+describe("maxUploadBytes limit", () => {
+  it("is the D1 2MB-safe cap in D1-only mode and larger with R2", () => {
+    expect(maxUploadBytes(d1Env)).toBe(D1_MAX_BLOB_BYTES);
+    expect(maxUploadBytes(r2Env)).toBe(R2_MAX_BLOB_BYTES);
+    expect(D1_MAX_BLOB_BYTES).toBeLessThan(2_000_000); // under D1's hard per-value cap
+    expect(R2_MAX_BLOB_BYTES).toBeGreaterThan(D1_MAX_BLOB_BYTES);
   });
 });
 

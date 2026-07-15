@@ -29,6 +29,18 @@ export function useR2(env: Env): boolean {
   return env.USE_R2 === "true" && !!env.BLOBS;
 }
 
+// Cloudflare D1 caps a single column value at 2,000,000 bytes, so in D1-only
+// mode the encrypted blob must stay under that (with headroom for row overhead).
+// In R2 mode the blob lives in object storage, so much larger bundles are fine.
+export const D1_MAX_BLOB_BYTES = 1_900_000;
+export const R2_MAX_BLOB_BYTES = 25 * 1024 * 1024;
+
+// maxUploadBytes is the per-share encrypted-blob size limit for the active
+// storage mode. Callers return 413 when a payload exceeds it.
+export function maxUploadBytes(env: Env): number {
+  return useR2(env) ? R2_MAX_BLOB_BYTES : D1_MAX_BLOB_BYTES;
+}
+
 function r2Key(kind: Kind, id: string): string {
   return `${kind}/${id}`;
 }
