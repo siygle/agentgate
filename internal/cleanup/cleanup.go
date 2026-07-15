@@ -24,23 +24,28 @@ func Start(ctx context.Context, database *sql.DB, blobs *blobstore.Store, interv
 				log.Println("cleanup: shutting down")
 				return
 			case <-ticker.C:
-				blobKeys, count, err := db.DeleteExpired(database)
-				if err != nil {
-					log.Printf("cleanup: error deleting expired records: %v", err)
-					continue
-				}
-				// Remove the on-disk blobs of the rows we just deleted. Best
-				// effort: a failed unlink only leaves an orphan file, not a
-				// dangling record.
-				for _, key := range blobKeys {
-					if err := blobs.Delete(key); err != nil {
-						log.Printf("cleanup: error deleting blob %q: %v", key, err)
-					}
-				}
-				if count > 0 {
-					log.Printf("cleanup: deleted %d expired records", count)
-				}
+				sweep(database, blobs)
 			}
 		}
 	}()
+}
+
+// sweep deletes expired records and the on-disk blobs of the rows it just
+// deleted. Blob deletion is best effort: a failed unlink only leaves an orphan
+// file, never a dangling record. Extracted from the goroutine so it can be
+// exercised directly in tests.
+func sweep(database *sql.DB, blobs *blobstore.Store) {
+	blobKeys, count, err := db.DeleteExpired(database)
+	if err != nil {
+		log.Printf("cleanup: error deleting expired records: %v", err)
+		return
+	}
+	for _, key := range blobKeys {
+		if err := blobs.Delete(key); err != nil {
+			log.Printf("cleanup: error deleting blob %q: %v", key, err)
+		}
+	}
+	if count > 0 {
+		log.Printf("cleanup: deleted %d expired records", count)
+	}
 }

@@ -129,16 +129,21 @@ func UpdateFileBundleEncryptedData(db *sql.DB, id, encryptedData string) error {
 // Records marked never_expires=1 are skipped. It returns the blob keys of any
 // deleted records that stored their blob on the filesystem (so the caller can
 // delete those files) and the total number of deleted rows.
+//
+// The delete uses RETURNING so the blob keys come from exactly the rows that
+// were deleted, atomically. A prior SELECT-then-DELETE could race a concurrent
+// "keep this share" (PATCH never_expires=true) on an about-to-expire record:
+// the row would survive the DELETE but its blob key would already be queued for
+// unlinking, orphaning a live share. RETURNING closes that window.
 func DeleteExpired(db *sql.DB) (blobKeys []string, count int64, err error) {
 	now := time.Now().UTC()
 	for _, table := range []string{"diffs", "file_bundles"} {
-		// Collect external blob keys before deleting the rows.
-		rows, qerr := db.Query(
-			"SELECT blob_key FROM "+table+" WHERE never_expires = 0 AND expired_at <= ? AND blob_key IS NOT NULL AND blob_key <> ''",
+		rows, derr := db.Query(
+			"DELETE FROM "+table+" WHERE never_expires = 0 AND expired_at <= ? RETURNING COALESCE(blob_key, '')",
 			now,
 		)
-		if qerr != nil {
-			return nil, 0, qerr
+		if derr != nil {
+			return nil, 0, derr
 		}
 		for rows.Next() {
 			var k string
@@ -146,23 +151,16 @@ func DeleteExpired(db *sql.DB) (blobKeys []string, count int64, err error) {
 				rows.Close()
 				return nil, 0, serr
 			}
-			blobKeys = append(blobKeys, k)
+			count++
+			if k != "" {
+				blobKeys = append(blobKeys, k)
+			}
 		}
 		if cerr := rows.Err(); cerr != nil {
 			rows.Close()
 			return nil, 0, cerr
 		}
 		rows.Close()
-
-		res, derr := db.Exec("DELETE FROM "+table+" WHERE never_expires = 0 AND expired_at <= ?", now)
-		if derr != nil {
-			return nil, 0, derr
-		}
-		n, rerr := res.RowsAffected()
-		if rerr != nil {
-			return nil, 0, rerr
-		}
-		count += n
 	}
 	return blobKeys, count, nil
 }
