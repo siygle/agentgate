@@ -7,6 +7,10 @@ services:
       - data:/data
     environment:
       BASE_URL: ${BASE_URL:-http://localhost:8080}
+      # Store encrypted blobs as files under the persistent volume instead of
+      # inline in SQLite (self-host analog of the Worker's R2 mode) — keeps the
+      # DB lean and handles larger bundles. Unset it to store blobs inline.
+      AGENTGATE_BLOB_DIR: ${AGENTGATE_BLOB_DIR:-/data/blobs}
 
 volumes:
   data:

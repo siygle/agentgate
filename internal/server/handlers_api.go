@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/siygle/agentgate/internal/blobstore"
 	"github.com/siygle/agentgate/internal/db"
 	"github.com/siygle/agentgate/internal/id"
 )
@@ -131,6 +133,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) 
 
 	var (
 		encData      string
+		blobKey      string
 		expiredAt    time.Time
 		neverExpires bool
 		found        bool
@@ -146,6 +149,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) 
 		if d != nil {
 			found = true
 			encData = d.EncryptedData
+			blobKey = d.BlobKey
 			expiredAt = d.ExpiredAt
 			neverExpires = d.NeverExpires
 		}
@@ -158,6 +162,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) 
 		if fb != nil {
 			found = true
 			encData = fb.EncryptedData
+			blobKey = fb.BlobKey
 			expiredAt = fb.ExpiredAt
 			neverExpires = fb.NeverExpires
 		}
@@ -166,6 +171,26 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) 
 	if !found || (!neverExpires && expiredAt.Before(time.Now().UTC())) {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
 		return
+	}
+
+	// A record with a blob_key stored its ciphertext on the filesystem; read it
+	// back. A missing file is treated as not found; a disabled store on a record
+	// that needs one is a misconfiguration (500), not a silent 404.
+	if blobKey != "" {
+		if !s.blobs.Enabled() {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "blob storage not configured for this record"})
+			return
+		}
+		blob, err := s.blobs.Get(blobKey)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			}
+			return
+		}
+		encData = blob
 	}
 
 	data := getResponseData{
@@ -209,9 +234,20 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 	if !ok {
 		return
 	}
-	encJSON := []byte(encJSONStr)
 
 	newID := id.Generate()
+
+	// Decide storage: filesystem blob (encrypted_data empty) or inline in the DB.
+	inlineData := encJSONStr
+	blobKey := ""
+	if s.blobs.Enabled() {
+		blobKey = blobstore.Key(kind, newID)
+		if err := s.blobs.Put(blobKey, encJSONStr); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		inlineData = ""
+	}
 
 	var expiry time.Time
 	if req.NeverExpires {
@@ -230,25 +266,22 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 	}
 
 	var pathPrefix string
+	var createErr error
 	switch kind {
 	case "diff":
-		if err := db.CreateDiff(s.db, newID, string(encJSON), expiry, req.NeverExpires, ownerHash); err != nil {
-			writeJSON(w, http.StatusInternalServerError, apiResponse{
-				Success: false,
-				Error:   "internal server error",
-			})
-			return
-		}
+		createErr = db.CreateDiff(s.db, newID, inlineData, blobKey, expiry, req.NeverExpires, ownerHash)
 		pathPrefix = "/p/"
 	case "files":
-		if err := db.CreateFileBundle(s.db, newID, string(encJSON), expiry, req.NeverExpires, ownerHash); err != nil {
-			writeJSON(w, http.StatusInternalServerError, apiResponse{
-				Success: false,
-				Error:   "internal server error",
-			})
-			return
-		}
+		createErr = db.CreateFileBundle(s.db, newID, inlineData, blobKey, expiry, req.NeverExpires, ownerHash)
 		pathPrefix = "/f/"
+	}
+	if createErr != nil {
+		// Roll back the orphaned blob so the two stores stay in sync.
+		if blobKey != "" {
+			_ = s.blobs.Delete(blobKey)
+		}
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
 	}
 
 	previewURL := s.baseURL + pathPrefix + newID
@@ -418,6 +451,7 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 	}
 
 	var storedHash string
+	var blobKey string
 	var found bool
 	switch kind {
 	case "diff":
@@ -428,6 +462,7 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 		}
 		if d != nil {
 			found = true
+			blobKey = d.BlobKey
 			if d.OwnerTokenHash.Valid {
 				storedHash = d.OwnerTokenHash.String
 			}
@@ -440,6 +475,7 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 		}
 		if fb != nil {
 			found = true
+			blobKey = fb.BlobKey
 			if fb.OwnerTokenHash.Valid {
 				storedHash = fb.OwnerTokenHash.String
 			}
@@ -460,16 +496,29 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 		return
 	}
 
-	switch kind {
-	case "diff":
-		if err := db.UpdateDiffEncryptedData(s.db, recordID, string(encJSON)); err != nil {
+	// Re-key writes to wherever the record already lives: overwrite the
+	// filesystem blob in place when it has one, else update the DB column.
+	if blobKey != "" {
+		if !s.blobs.Enabled() {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "blob storage not configured for this record"})
+			return
+		}
+		if err := s.blobs.Put(blobKey, encJSON); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
 			return
 		}
-	case "files":
-		if err := db.UpdateFileBundleEncryptedData(s.db, recordID, string(encJSON)); err != nil {
-			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
-			return
+	} else {
+		switch kind {
+		case "diff":
+			if err := db.UpdateDiffEncryptedData(s.db, recordID, encJSON); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+				return
+			}
+		case "files":
+			if err := db.UpdateFileBundleEncryptedData(s.db, recordID, encJSON); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+				return
+			}
 		}
 	}
 

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/siygle/agentgate/internal/blobstore"
 	"github.com/siygle/agentgate/internal/cleanup"
 	"github.com/siygle/agentgate/internal/db"
 	"github.com/siygle/agentgate/internal/server"
@@ -22,6 +23,7 @@ func main() {
 	port := flag.Int("port", envOrDefaultInt("PORT", 8080), "HTTP port")
 	dbPath := flag.String("db", envOrDefault("DATABASE_PATH", "./agentgate.db"), "SQLite database path")
 	baseURL := flag.String("base-url", envOrDefault("BASE_URL", "http://localhost:8080"), "Public base URL")
+	blobDir := flag.String("blob-dir", envOrDefault("AGENTGATE_BLOB_DIR", ""), "Directory for external encrypted blob storage (empty = store blobs inline in the DB)")
 	flag.Parse()
 
 	// Open database.
@@ -31,6 +33,15 @@ func main() {
 	}
 	defer database.Close()
 
+	// Optional filesystem blob store (empty dir = inline storage).
+	blobs, err := blobstore.New(*blobDir)
+	if err != nil {
+		log.Fatalf("failed to init blob store: %v", err)
+	}
+	if blobs.Enabled() {
+		log.Printf("blob storage: filesystem (%s)", *blobDir)
+	}
+
 	// Prepare embedded filesystem.
 	staticFS, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
@@ -38,12 +49,12 @@ func main() {
 	}
 
 	// Create server.
-	srv := server.New(database, *baseURL, staticFS)
+	srv := server.New(database, *baseURL, staticFS, blobs)
 
 	// Start cleanup goroutine.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cleanup.Start(ctx, database, 1*time.Hour)
+	cleanup.Start(ctx, database, blobs, 1*time.Hour)
 
 	// Start HTTP server.
 	addr := fmt.Sprintf(":%d", *port)

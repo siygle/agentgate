@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/siygle/agentgate/internal/blobstore"
 )
 
 // defaultMaxUploadBytes caps the stored encrypted blob per share on the
@@ -24,17 +25,20 @@ type Server struct {
 	staticFS       fs.FS
 	baseURL        string
 	maxUploadBytes int64
+	blobs          *blobstore.Store // nil = inline storage (blobs in the DB)
 }
 
-// New creates a Server with all routes registered.
-// staticFS should be rooted at the directory whose contents are served under
-// /static/ (it also holds the static HTML shells: index.html and views/*.html).
-func New(db *sql.DB, baseURL string, staticFS fs.FS) *Server {
+// New creates a Server with all routes registered. staticFS should be rooted at
+// the directory whose contents are served under /static/ (it also holds the
+// static HTML shells). blobs may be nil, meaning encrypted blobs are stored
+// inline in the database; when non-nil they are written to the filesystem.
+func New(db *sql.DB, baseURL string, staticFS fs.FS, blobs *blobstore.Store) *Server {
 	s := &Server{
 		db:             db,
 		staticFS:       staticFS,
 		baseURL:        baseURL,
 		maxUploadBytes: resolveMaxUploadBytes(),
+		blobs:          blobs,
 	}
 
 	r := chi.NewRouter()

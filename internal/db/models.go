@@ -13,6 +13,9 @@ type Diff struct {
 	CreatedAt      time.Time
 	NeverExpires   bool
 	OwnerTokenHash sql.NullString
+	// BlobKey is non-empty when the encrypted blob lives on the filesystem
+	// (AGENTGATE_BLOB_DIR mode) rather than inline in EncryptedData.
+	BlobKey string
 }
 
 // FileBundle represents an encrypted file bundle stored in the database.
@@ -23,4 +26,7 @@ type FileBundle struct {
 	CreatedAt      time.Time
 	NeverExpires   bool
 	OwnerTokenHash sql.NullString
+	// BlobKey is non-empty when the encrypted blob lives on the filesystem
+	// (AGENTGATE_BLOB_DIR mode) rather than inline in EncryptedData.
+	BlobKey string
 }

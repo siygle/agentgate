@@ -5,12 +5,14 @@ import (
 	"time"
 )
 
-// CreateDiff inserts a new diff record.
-func CreateDiff(db *sql.DB, id, encryptedData string, expiredAt time.Time, neverExpires bool, ownerTokenHash string) error {
+// CreateDiff inserts a new diff record. blobKey is empty for inline storage
+// (encryptedData holds the blob) or set when the blob lives on the filesystem
+// (encryptedData is then empty).
+func CreateDiff(db *sql.DB, id, encryptedData, blobKey string, expiredAt time.Time, neverExpires bool, ownerTokenHash string) error {
 	_, err := db.Exec(
-		`INSERT INTO diffs (id, encrypted_data, expired_at, never_expires, owner_token_hash)
-		 VALUES (?, ?, ?, ?, ?)`,
-		id, encryptedData, expiredAt.UTC(), boolToInt(neverExpires), nullableString(ownerTokenHash),
+		`INSERT INTO diffs (id, encrypted_data, expired_at, never_expires, owner_token_hash, blob_key)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		id, encryptedData, expiredAt.UTC(), boolToInt(neverExpires), nullableString(ownerTokenHash), nullableString(blobKey),
 	)
 	return err
 }
@@ -18,14 +20,14 @@ func CreateDiff(db *sql.DB, id, encryptedData string, expiredAt time.Time, never
 // GetDiff retrieves a diff by ID. Returns nil if not found.
 func GetDiff(db *sql.DB, id string) (*Diff, error) {
 	row := db.QueryRow(
-		`SELECT id, encrypted_data, expired_at, created_at, never_expires, owner_token_hash
+		`SELECT id, encrypted_data, expired_at, created_at, never_expires, owner_token_hash, COALESCE(blob_key, '')
 		 FROM diffs WHERE id = ?`,
 		id,
 	)
 
 	var d Diff
 	var neverExpires int
-	err := row.Scan(&d.ID, &d.EncryptedData, &d.ExpiredAt, &d.CreatedAt, &neverExpires, &d.OwnerTokenHash)
+	err := row.Scan(&d.ID, &d.EncryptedData, &d.ExpiredAt, &d.CreatedAt, &neverExpires, &d.OwnerTokenHash, &d.BlobKey)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -36,12 +38,12 @@ func GetDiff(db *sql.DB, id string) (*Diff, error) {
 	return &d, nil
 }
 
-// CreateFileBundle inserts a new file bundle record.
-func CreateFileBundle(db *sql.DB, id, encryptedData string, expiredAt time.Time, neverExpires bool, ownerTokenHash string) error {
+// CreateFileBundle inserts a new file bundle record. See CreateDiff for blobKey.
+func CreateFileBundle(db *sql.DB, id, encryptedData, blobKey string, expiredAt time.Time, neverExpires bool, ownerTokenHash string) error {
 	_, err := db.Exec(
-		`INSERT INTO file_bundles (id, encrypted_data, expired_at, never_expires, owner_token_hash)
-		 VALUES (?, ?, ?, ?, ?)`,
-		id, encryptedData, expiredAt.UTC(), boolToInt(neverExpires), nullableString(ownerTokenHash),
+		`INSERT INTO file_bundles (id, encrypted_data, expired_at, never_expires, owner_token_hash, blob_key)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		id, encryptedData, expiredAt.UTC(), boolToInt(neverExpires), nullableString(ownerTokenHash), nullableString(blobKey),
 	)
 	return err
 }
@@ -49,14 +51,14 @@ func CreateFileBundle(db *sql.DB, id, encryptedData string, expiredAt time.Time,
 // GetFileBundle retrieves a file bundle by ID. Returns nil if not found.
 func GetFileBundle(db *sql.DB, id string) (*FileBundle, error) {
 	row := db.QueryRow(
-		`SELECT id, encrypted_data, expired_at, created_at, never_expires, owner_token_hash
+		`SELECT id, encrypted_data, expired_at, created_at, never_expires, owner_token_hash, COALESCE(blob_key, '')
 		 FROM file_bundles WHERE id = ?`,
 		id,
 	)
 
 	var fb FileBundle
 	var neverExpires int
-	err := row.Scan(&fb.ID, &fb.EncryptedData, &fb.ExpiredAt, &fb.CreatedAt, &neverExpires, &fb.OwnerTokenHash)
+	err := row.Scan(&fb.ID, &fb.EncryptedData, &fb.ExpiredAt, &fb.CreatedAt, &neverExpires, &fb.OwnerTokenHash, &fb.BlobKey)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -124,30 +126,43 @@ func UpdateFileBundleEncryptedData(db *sql.DB, id, encryptedData string) error {
 }
 
 // DeleteExpired removes expired records from both diffs and file_bundles tables.
-// Records marked never_expires=1 are skipped. It returns the total number of
-// deleted rows.
-func DeleteExpired(db *sql.DB) (int64, error) {
+// Records marked never_expires=1 are skipped. It returns the blob keys of any
+// deleted records that stored their blob on the filesystem (so the caller can
+// delete those files) and the total number of deleted rows.
+//
+// The delete uses RETURNING so the blob keys come from exactly the rows that
+// were deleted, atomically. A prior SELECT-then-DELETE could race a concurrent
+// "keep this share" (PATCH never_expires=true) on an about-to-expire record:
+// the row would survive the DELETE but its blob key would already be queued for
+// unlinking, orphaning a live share. RETURNING closes that window.
+func DeleteExpired(db *sql.DB) (blobKeys []string, count int64, err error) {
 	now := time.Now().UTC()
-
-	res1, err := db.Exec("DELETE FROM diffs WHERE never_expires = 0 AND expired_at <= ?", now)
-	if err != nil {
-		return 0, err
+	for _, table := range []string{"diffs", "file_bundles"} {
+		rows, derr := db.Query(
+			"DELETE FROM "+table+" WHERE never_expires = 0 AND expired_at <= ? RETURNING COALESCE(blob_key, '')",
+			now,
+		)
+		if derr != nil {
+			return nil, 0, derr
+		}
+		for rows.Next() {
+			var k string
+			if serr := rows.Scan(&k); serr != nil {
+				rows.Close()
+				return nil, 0, serr
+			}
+			count++
+			if k != "" {
+				blobKeys = append(blobKeys, k)
+			}
+		}
+		if cerr := rows.Err(); cerr != nil {
+			rows.Close()
+			return nil, 0, cerr
+		}
+		rows.Close()
 	}
-	count1, err := res1.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	res2, err := db.Exec("DELETE FROM file_bundles WHERE never_expires = 0 AND expired_at <= ?", now)
-	if err != nil {
-		return 0, err
-	}
-	count2, err := res2.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	return count1 + count2, nil
+	return blobKeys, count, nil
 }
 
 func boolToInt(b bool) int {

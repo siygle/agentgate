@@ -235,6 +235,19 @@ Use `/api/diff/{id}` for diff shares and `/api/files/{id}` for file shares.
 | `--port` | `PORT` | `8080` | HTTP port |
 | `--db` | `DATABASE_PATH` | `./agentgate.db` | SQLite database path |
 | `--base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL for shared links |
+| `--blob-dir` | `AGENTGATE_BLOB_DIR` | *(empty)* | Directory for external encrypted blob storage (empty = store blobs inline in SQLite) |
+| — | `AGENTGATE_MAX_UPLOAD_BYTES` | `10485760` | Max encrypted payload per share; larger uploads get HTTP 413 |
+
+### Blob storage (self-host)
+
+By default the encrypted blob is stored inline in the SQLite `encrypted_data`
+column — simple, and SQLite has no small per-value cap. Set **`AGENTGATE_BLOB_DIR`**
+to instead write each blob to a file under that directory (keyed `<kind>/<id>`),
+keeping metadata in SQLite. This is the self-host analog of the Worker's R2 mode:
+it keeps the database lean and makes large bundles and backups easier. Point it
+at a path on the same persistent volume as the DB. Switching modes is safe —
+existing inline records keep reading from the DB; only new records use the
+directory. Expired blobs are removed by the cleanup pass.
 
 ## Deployment
 
@@ -250,6 +263,7 @@ services:
       - data:/data
     environment:
       BASE_URL: https://your-domain.com
+      AGENTGATE_BLOB_DIR: /data/blobs   # store blobs as files on the volume; omit to keep them inline in SQLite
 
 volumes:
   data:

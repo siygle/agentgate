@@ -33,6 +33,11 @@ var addColumnMigrations = []string{
 	`ALTER TABLE diffs ADD COLUMN owner_token_hash TEXT`,
 	`ALTER TABLE file_bundles ADD COLUMN never_expires INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE file_bundles ADD COLUMN owner_token_hash TEXT`,
+	// blob_key points at an external filesystem blob (AGENTGATE_BLOB_DIR mode).
+	// NULL/empty means the blob is stored inline in encrypted_data (the default
+	// and the only mode before this migration), so existing rows keep working.
+	`ALTER TABLE diffs ADD COLUMN blob_key TEXT`,
+	`ALTER TABLE file_bundles ADD COLUMN blob_key TEXT`,
 }
 
 // Open opens a SQLite database at the given path, enables WAL mode,
