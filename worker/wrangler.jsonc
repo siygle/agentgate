@@ -39,5 +39,19 @@
 
   // BASE_URL: public URL for preview/manage links (set after first deploy).
   // USE_R2: "true" to use the D1 + R2 hybrid; anything else = D1-only.
-  "vars": { "BASE_URL": "http://localhost:8787", "USE_R2": "false" }
+  //
+  // Owner dashboard (admin):
+  //   SESSION_SECRET, OWNER_KEY are SECRETS — set via `wrangler secret put`,
+  //     never here. An empty SESSION_SECRET disables the admin dashboard.
+  //   SESSION_TTL: session lifetime seconds (default 43200 = 12h).
+  //   CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD: enable Cloudflare Access login.
+  //   CF_ACCESS_EMAILS: optional comma-separated allowlist.
+  "vars": {
+    "BASE_URL": "http://localhost:8787",
+    "USE_R2": "false",
+    "SESSION_TTL": "43200",
+    "CF_ACCESS_TEAM_DOMAIN": "",
+    "CF_ACCESS_AUD": "",
+    "CF_ACCESS_EMAILS": ""
+  }
 }

@@ -20,8 +20,13 @@ export default defineWorkersConfig(async () => {
             // R2 binding is opt-in in wrangler.jsonc (commented out); provide it
             // here so tests can exercise the hybrid path alongside D1-only.
             r2Buckets: ["BLOBS"],
-            // Exposed to the setup file so it can apply the schema to the test D1.
-            bindings: { TEST_MIGRATIONS: migrations },
+            // Exposed to the setup file so it can apply the schema to the test
+            // D1. SESSION_SECRET/OWNER_KEY enable the admin subsystem in tests.
+            bindings: {
+              TEST_MIGRATIONS: migrations,
+              SESSION_SECRET: "test-session-secret",
+              OWNER_KEY: "hunter2",
+            },
           },
         },
       },

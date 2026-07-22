@@ -165,6 +165,101 @@ func DeleteExpired(db *sql.DB) (blobKeys []string, count int64, err error) {
 	return blobKeys, count, nil
 }
 
+// ListAllShares returns a paginated, merged listing of diffs + file_bundles
+// with no ciphertext. total is the count for the same filters ignoring the
+// page window. sort ∈ {"created_at","expired_at"}, order ∈ {"asc","desc"},
+// status ∈ {"all","active","expired"}, kind ∈ {"all","diff","files"}; any
+// unrecognized value falls back to its default. sort/order/status/kind are
+// mapped to fixed constants (never interpolated from raw input).
+func ListAllShares(dbc *sql.DB, limit, offset int, sort, order, status, kind string) ([]ShareSummary, int, error) {
+	sortCol := "created_at"
+	if sort == "expired_at" {
+		sortCol = "expired_at"
+	}
+	orderDir := "DESC"
+	if order == "asc" {
+		orderDir = "ASC"
+	}
+
+	// Merged base with a literal kind per table and a computed has_blob/byte_size.
+	const base = `
+		SELECT id, 'diff' AS kind, created_at, expired_at, never_expires,
+		       CASE WHEN COALESCE(blob_key,'')<>'' THEN 1 ELSE 0 END AS has_blob,
+		       CASE WHEN COALESCE(blob_key,'')='' THEN length(encrypted_data) ELSE NULL END AS byte_size
+		FROM diffs
+		UNION ALL
+		SELECT id, 'files', created_at, expired_at, never_expires,
+		       CASE WHEN COALESCE(blob_key,'')<>'' THEN 1 ELSE 0 END,
+		       CASE WHEN COALESCE(blob_key,'')='' THEN length(encrypted_data) ELSE NULL END
+		FROM file_bundles`
+
+	now := time.Now().UTC()
+	where := ""
+	args := []interface{}{}
+	if kind == "diff" || kind == "files" {
+		where += " AND kind = ?"
+		args = append(args, kind)
+	}
+	switch status {
+	case "active":
+		where += " AND (never_expires = 1 OR expired_at > ?)"
+		args = append(args, now)
+	case "expired":
+		where += " AND (never_expires = 0 AND expired_at <= ?)"
+		args = append(args, now)
+	}
+	whereClause := ""
+	if where != "" {
+		whereClause = " WHERE 1=1" + where
+	}
+
+	var total int
+	countSQL := "SELECT COUNT(*) FROM (" + base + ")" + whereClause
+	if err := dbc.QueryRow(countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	pageSQL := "SELECT * FROM (" + base + ")" + whereClause +
+		" ORDER BY " + sortCol + " " + orderDir + " LIMIT ? OFFSET ?"
+	pageArgs := append(append([]interface{}{}, args...), limit, offset)
+	rows, err := dbc.Query(pageSQL, pageArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := []ShareSummary{}
+	for rows.Next() {
+		var it ShareSummary
+		var neverExpires, hasBlob int
+		if err := rows.Scan(&it.ID, &it.Kind, &it.CreatedAt, &it.ExpiredAt, &neverExpires, &hasBlob, &it.ByteSize); err != nil {
+			return nil, 0, err
+		}
+		it.NeverExpires = neverExpires != 0
+		it.HasBlob = hasBlob != 0
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// DeleteShareByID hard-deletes one record from table ("diffs" or
+// "file_bundles") and returns its blob key ("" for inline) so the caller can
+// unlink the filesystem blob. found=false when no row matched. The caller must
+// pass a whitelisted table name (never raw input).
+func DeleteShareByID(dbc *sql.DB, table, id string) (blobKey string, found bool, err error) {
+	row := dbc.QueryRow("DELETE FROM "+table+" WHERE id = ? RETURNING COALESCE(blob_key, '')", id)
+	if err := row.Scan(&blobKey); err != nil {
+		if err == sql.ErrNoRows {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return blobKey, true, nil
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

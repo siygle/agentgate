@@ -168,6 +168,100 @@ async function main() {
   const txt = await r.text();
   check("GET /llms.txt -> 200 with base url", r.status === 200 && txt.includes(BASE));
 
+  // --- admin dashboard ---
+  // Always: the protected surface must be gated on both backends.
+  r = await fetch(`${BASE}/api/admin/shares`);
+  check("GET /api/admin/shares without session -> 401", r.status === 401, `got ${r.status}`);
+  r = await fetch(`${BASE}/api/admin/session`);
+  body = await r.json();
+  check("GET /api/admin/session -> 200 status probe", r.status === 200 && body.success === true);
+
+  // Full CRUD assertions run only when a session is available. Provide the owner
+  // key via ADMIN_OWNER_KEY (the runner logs in itself) or a ready cookie via
+  // ADMIN_SESSION (e.g. "agentgate_admin=...").
+  let adminCookie = process.env.ADMIN_SESSION || "";
+  const ownerKey = process.env.ADMIN_OWNER_KEY;
+  if (ownerKey && !adminCookie) {
+    const lr = await fetch(`${BASE}/api/admin/login/owner-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: ownerKey }),
+    });
+    if (lr.status === 200) {
+      const m = (lr.headers.get("set-cookie") || "").match(/agentgate_admin=([^;]+)/);
+      if (m) adminCookie = `agentgate_admin=${m[1]}`;
+      check("admin owner-key login -> 200 + cookie", !!adminCookie);
+    } else {
+      check("admin owner-key login -> 200 + cookie", false, `got ${lr.status}`);
+    }
+  }
+
+  if (!adminCookie) {
+    console.log("  · admin CRUD assertions skipped (set ADMIN_OWNER_KEY or ADMIN_SESSION)");
+  } else {
+    const H = { Cookie: adminCookie };
+    const CT_DIFF = "Y29udHJhY3QtYWRtaW4tZGlmZg==";
+    const CT_FILES = "Y29udHJhY3QtYWRtaW4tZmlsZXM=";
+    const mk = async (kind, ct) => {
+      const rr = await fetch(`${BASE}/api/${kind}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ encrypted_data: { ciphertext: ct, iv: "aXY=", salt: "c2E=" } }),
+      });
+      return (await rr.json()).data?.id;
+    };
+    const adDiff = await mk("diff", CT_DIFF);
+    const adFiles = await mk("files", CT_FILES);
+
+    r = await fetch(`${BASE}/api/admin/shares?limit=200`, { headers: H });
+    check("admin list -> 200", r.status === 200, `got ${r.status}`);
+    const listText = await r.text();
+    check("admin list never leaks ciphertext", !listText.includes(CT_DIFF) && !listText.includes(CT_FILES));
+    const listBody = JSON.parse(listText);
+    const items = listBody.data?.items || [];
+    const ids = items.map((i) => i.id);
+    check("admin list includes created ids", ids.includes(adDiff) && ids.includes(adFiles));
+    const di = items.find((i) => i.id === adDiff);
+    check("admin list item status active", di?.status === "active");
+    check("admin list created_at is RFC3339", typeof di?.created_at === "string" && /\dT\d/.test(di.created_at));
+    check("admin list has byte_size field", di && Object.prototype.hasOwnProperty.call(di, "byte_size"));
+
+    r = await fetch(`${BASE}/api/admin/diff/${adDiff}`, {
+      method: "PATCH",
+      headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ never_expires: true }),
+    });
+    body = await r.json();
+    check("admin keep-forever -> 200 never_expires", r.status === 200 && body.data?.never_expires === true);
+
+    r = await fetch(`${BASE}/api/admin/files/${adFiles}/revoke`, { method: "POST", headers: H });
+    check("admin revoke -> 200", r.status === 200, `got ${r.status}`);
+    r = await fetch(`${BASE}/api/files/${adFiles}`);
+    check("revoked share GET -> 404", r.status === 404, `got ${r.status}`);
+    r = await fetch(`${BASE}/api/admin/shares?limit=200&status=expired`, { headers: H });
+    const exIds = ((await r.json()).data?.items || []).map((i) => i.id);
+    check("revoked share listed as expired", exIds.includes(adFiles));
+
+    r = await fetch(`${BASE}/api/admin/diff/${adDiff}/reshare`, { method: "POST", headers: H });
+    body = await r.json();
+    const reshareId = body.data?.id;
+    check("admin reshare -> 200 new id", r.status === 200 && !!reshareId && reshareId !== adDiff);
+    r = await fetch(`${BASE}/api/diff/${reshareId}`);
+    body = await r.json();
+    check("reshared GET returns same ciphertext", body.data?.encrypted_data?.ciphertext === CT_DIFF);
+
+    r = await fetch(`${BASE}/api/admin/diff/${adDiff}`, { method: "DELETE", headers: H });
+    check("admin delete -> 200", r.status === 200, `got ${r.status}`);
+    r = await fetch(`${BASE}/api/diff/${adDiff}`);
+    check("deleted share GET -> 404", r.status === 404, `got ${r.status}`);
+
+    r = await fetch(`${BASE}/api/admin/bogus/x`, { method: "DELETE", headers: H });
+    check("admin unknown kind -> 404", r.status === 404, `got ${r.status}`);
+
+    r = await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: H });
+    check("admin logout -> 200", r.status === 200, `got ${r.status}`);
+  }
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) {
     console.log("\nFailures:");

@@ -82,6 +82,17 @@ func (s *Store) Get(key string) (string, error) {
 	return string(b), nil
 }
 
+// Copy duplicates the blob at srcKey to dstKey, reusing Put's temp-file+rename
+// so a reader never sees a partial destination blob. Used by admin re-share to
+// give the copied record its own blob object.
+func (s *Store) Copy(srcKey, dstKey string) error {
+	data, err := s.Get(srcKey)
+	if err != nil {
+		return err
+	}
+	return s.Put(dstKey, data)
+}
+
 // Delete removes the blob for key. A missing blob is not an error (idempotent),
 // so cleanup can run repeatedly without failing on already-gone files.
 func (s *Store) Delete(key string) error {

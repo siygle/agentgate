@@ -268,6 +268,33 @@ Use `/api/diff/{id}` for diff shares and `/api/files/{id}` for file shares.
 | `--base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL for shared links |
 | `--blob-dir` | `AGENTGATE_BLOB_DIR` | *(empty)* | Directory for external encrypted blob storage (empty = store blobs inline in SQLite) |
 | — | `AGENTGATE_MAX_UPLOAD_BYTES` | `10485760` | Max encrypted payload per share; larger uploads get HTTP 413 |
+| — | `AGENTGATE_SESSION_SECRET` | *(empty)* | HMAC secret for admin sessions. **Empty disables the owner dashboard.** |
+| — | `AGENTGATE_OWNER_KEY` | *(empty)* | Owner-key login secret for the dashboard (empty = that method off) |
+| — | `AGENTGATE_SESSION_TTL` | `43200` | Admin session lifetime, seconds (12h) |
+| — | `AGENTGATE_CF_ACCESS_ENABLED` | `false` | `true` to accept Cloudflare Access JWTs (see note) |
+| — | `AGENTGATE_CF_ACCESS_TEAM_DOMAIN` | *(empty)* | `<team>.cloudflareaccess.com` |
+| — | `AGENTGATE_CF_ACCESS_AUD` | *(empty)* | Expected Access application `aud` tag |
+| — | `AGENTGATE_CF_ACCESS_EMAILS` | *(empty)* | Optional comma-separated email allowlist |
+
+### Owner dashboard (`/admin`)
+
+Set `AGENTGATE_SESSION_SECRET` (a long random string) to enable the owner
+dashboard, then add at least one login method — `AGENTGATE_OWNER_KEY` and/or
+Cloudflare Access. It lists every share in the deployment with actions to keep
+forever, revoke, re-share (issue a new link for the same content, passphrase
+unchanged), and delete. On the Cloudflare Worker the same dashboard is enabled by
+setting the `SESSION_SECRET`/`OWNER_KEY` secrets (`wrangler secret put`) and the
+`CF_ACCESS_*` vars.
+
+> **Cloudflare Access on self-host — lock the origin.** The JWT is fully verified
+> (signature + `aud` + issuer + expiry), so a forged `Cf-Access-Jwt-Assertion`
+> header is rejected. But only enable `AGENTGATE_CF_ACCESS_ENABLED` when your
+> origin is reachable **solely through Cloudflare** — otherwise someone could hit
+> the origin directly and bypass Access entirely. Enabling the orange-cloud proxy
+> + SSL is **not** sufficient; you must also lock the origin, via any one of:
+> (1) a `cloudflared` tunnel (origin opens no public port), (2) a firewall allowing
+> only Cloudflare IP ranges, or (3) Authenticated Origin Pulls (mTLS). The Worker
+> backend has no such concern (it runs on Cloudflare).
 
 ### Blob storage (self-host)
 

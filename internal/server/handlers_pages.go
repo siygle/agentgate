@@ -48,3 +48,10 @@ func (s *Server) handleViewPlan(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleViewDocs(w http.ResponseWriter, r *http.Request) {
 	s.servePage(w, r, "views/plan.html")
 }
+
+// handleViewAdmin serves the owner-dashboard shell. Like the other view shells
+// it always returns 200; the client JS probes /api/admin/session and renders
+// either the login card or the shares table.
+func (s *Server) handleViewAdmin(w http.ResponseWriter, r *http.Request) {
+	s.servePage(w, r, "views/admin.html")
+}

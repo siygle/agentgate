@@ -196,6 +196,107 @@ export async function replaceShareData(
     .run();
 }
 
+// getShareCiphertext returns the raw stored ciphertext JSON regardless of
+// expiry (used by admin re-share, which may copy an already-revoked/expired
+// record). Reads from the D1 column or R2, mirroring getShare. Null if missing.
+export async function getShareCiphertext(env: Env, kind: Kind, id: string): Promise<string | null> {
+  const row = await getMeta(env, kind, id);
+  if (!row) return null;
+  if (row.encrypted_data != null) return row.encrypted_data;
+  if (row.r2_key && env.BLOBS) {
+    const obj = await env.BLOBS.get(row.r2_key);
+    if (!obj) return null;
+    return await obj.text();
+  }
+  return null;
+}
+
+export interface ShareSummary {
+  id: string;
+  kind: Kind;
+  created_at: number; // unix seconds
+  expired_at: number;
+  never_expires: number;
+  storage: "inline" | "r2";
+  byte_size: number | null;
+}
+
+export interface ListResult {
+  items: ShareSummary[];
+  total: number;
+}
+
+// listAllShares returns a paginated, merged listing of diffs + file_bundles
+// with no ciphertext. sort/order/status/kind are mapped to fixed constants so
+// nothing from the caller is interpolated into the SQL.
+export async function listAllShares(
+  env: Env,
+  opts: {
+    limit: number;
+    offset: number;
+    sort?: string;
+    order?: string;
+    status?: string;
+    kind?: string;
+  },
+): Promise<ListResult> {
+  const sortCol = opts.sort === "expired_at" ? "expired_at" : "created_at";
+  const orderDir = opts.order === "asc" ? "ASC" : "DESC";
+
+  const base = `
+    SELECT id, 'diff' AS kind, created_at, expired_at, never_expires,
+           CASE WHEN encrypted_data IS NULL THEN 'r2' ELSE 'inline' END AS storage,
+           CASE WHEN encrypted_data IS NOT NULL THEN length(encrypted_data) ELSE NULL END AS byte_size
+    FROM diffs
+    UNION ALL
+    SELECT id, 'files', created_at, expired_at, never_expires,
+           CASE WHEN encrypted_data IS NULL THEN 'r2' ELSE 'inline' END,
+           CASE WHEN encrypted_data IS NOT NULL THEN length(encrypted_data) ELSE NULL END
+    FROM file_bundles`;
+
+  const now = nowSeconds();
+  const conds: string[] = [];
+  const args: unknown[] = [];
+  if (opts.kind === "diff" || opts.kind === "files") {
+    conds.push("kind = ?");
+    args.push(opts.kind);
+  }
+  if (opts.status === "active") {
+    conds.push("(never_expires = 1 OR expired_at > ?)");
+    args.push(now);
+  } else if (opts.status === "expired") {
+    conds.push("(never_expires = 0 AND expired_at <= ?)");
+    args.push(now);
+  }
+  const whereClause = conds.length ? " WHERE " + conds.join(" AND ") : "";
+
+  const countRow = await env.DB.prepare(`SELECT COUNT(*) AS n FROM (${base})${whereClause}`)
+    .bind(...args)
+    .first<{ n: number }>();
+  const total = countRow?.n ?? 0;
+
+  const pageSQL = `SELECT * FROM (${base})${whereClause} ORDER BY ${sortCol} ${orderDir} LIMIT ? OFFSET ?`;
+  const { results } = await env.DB.prepare(pageSQL)
+    .bind(...args, opts.limit, opts.offset)
+    .all<ShareSummary>();
+  return { items: results ?? [], total };
+}
+
+// deleteShareById hard-deletes one row and its R2 blob (if any). Returns false
+// when no row matched.
+export async function deleteShareById(env: Env, kind: Kind, id: string): Promise<boolean> {
+  const table = TABLE[kind];
+  const row = await env.DB.prepare(`SELECT r2_key FROM ${table} WHERE id = ?`)
+    .bind(id)
+    .first<{ r2_key: string }>();
+  if (!row) return false;
+  await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+  if (row.r2_key && env.BLOBS) {
+    await env.BLOBS.delete(row.r2_key).catch(() => {});
+  }
+  return true;
+}
+
 // deleteExpired removes expired rows from both tables (and their R2 blobs, for
 // rows that have one). Rows with never_expires = 1 are skipped. Returns the
 // number of deleted records.

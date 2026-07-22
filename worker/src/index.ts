@@ -17,19 +17,24 @@ import {
   type Kind,
 } from "./store";
 import { llmsTxt, llmsFullTxt } from "./llms";
+import adminApp from "./admin";
 
 type Ctx = Context<{ Bindings: Env }>;
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use(
-  "*",
-  cors({
-    origin: "*",
-    allowMethods: ["GET", "POST", "PATCH", "PUT", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-  }),
-);
+// Permissive CORS applies ONLY to the public share API — never to the admin
+// surface, which is same-origin and cookie-authenticated. (Browsers reject `*`
+// with credentials anyway; scoping it removes any ambiguity.)
+const publicCors = cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+});
+app.use("/api/diff", publicCors);
+app.use("/api/diff/*", publicCors);
+app.use("/api/files", publicCors);
+app.use("/api/files/*", publicCors);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +85,10 @@ app.get("/llms.txt", (c) =>
 app.get("/llms-full.txt", (c) =>
   c.text(llmsFullTxt(c.env.BASE_URL), 200, { "content-type": "text/plain; charset=utf-8" }),
 );
+
+// Owner dashboard: static shell + admin API sub-app (same-origin, no `*` CORS).
+app.on(["GET", "HEAD"], "/admin", (c) => servePage(c, "/views/admin.html"));
+app.route("/api/admin", adminApp);
 
 // ---------------------------------------------------------------------------
 // API: create
