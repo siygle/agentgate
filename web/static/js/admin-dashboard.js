@@ -339,6 +339,9 @@
       }).catch(function (e) { reshareBtn.disabled = false; alertError(e); });
     });
 
+    var resetBtn = el("button", { class: "btn btn-sm", text: "Reset 換金鑰" });
+    resetBtn.addEventListener("click", function () { openResetModal(it); });
+
     var delBtn = el("button", { class: "btn btn-sm btn-danger", text: "刪除" });
     delBtn.addEventListener("click", function () {
       confirmModal("永久刪除", "會立即刪除此紀錄與其加密內容，無法復原。", "刪除", "btn-danger", function () {
@@ -354,7 +357,7 @@
       el("td", {}, [statusPill(it)]),
       el("td", { text: it.storage }),
       el("td", { text: fmtSize(it.byte_size) }),
-      el("td", {}, [el("div", { class: "row-actions" }, [keepBtn, reshareBtn, revokeBtn, delBtn])])
+      el("td", {}, [el("div", { class: "row-actions" }, [keepBtn, reshareBtn, resetBtn, revokeBtn, delBtn])])
     ]);
   }
 
@@ -379,6 +382,86 @@
       ],
       actions: [{ label: "關閉", cls: "", onClick: function (close) { close(); } }]
     });
+  }
+
+  // resolvePrivateKey accepts either a raw base64 PKCS8 key, or the protected
+  // JSON file { "enc": { ciphertext, iv, salt } } plus its passphrase.
+  function resolvePrivateKey(text, keyPass) {
+    text = (text || "").trim();
+    var parsed = null;
+    try { parsed = JSON.parse(text); } catch (e) { /* not JSON: treat as raw */ }
+    if (parsed && parsed.enc && parsed.enc.ciphertext) {
+      if (!keyPass) return Promise.reject(new Error("此私鑰檔已加密，請輸入保護用 passphrase"));
+      return window.AgentGateCrypto.decrypt(parsed.enc.ciphertext, parsed.enc.iv, parsed.enc.salt, keyPass);
+    }
+    return Promise.resolve(text);
+  }
+
+  function showResetResult(data, newPass) {
+    var passCode = el("code", { text: newPass });
+    var copyLink = el("button", { class: "btn", text: "複製連結" });
+    copyLink.addEventListener("click", function () {
+      try { navigator.clipboard.writeText(data.preview_url); copyLink.textContent = "已複製"; } catch (e) {}
+    });
+    var copyPass = el("button", { class: "btn", text: "複製 passphrase" });
+    copyPass.addEventListener("click", function () {
+      try { navigator.clipboard.writeText(newPass); copyPass.textContent = "已複製"; } catch (e) {}
+    });
+    modal({
+      title: "已重設並重新分享",
+      bodyNodes: [
+        el("p", { text: "舊連結已作廢、舊 passphrase 失效。請把下列新連結與新 passphrase 分開、透過安全管道交給收件者。" }),
+        el("div", { class: "admin-muted", text: "新連結" }),
+        el("code", { text: data.preview_url }),
+        el("div", { class: "admin-muted", style: "margin-top:0.5rem;", text: "新 passphrase（只顯示這一次）" }),
+        passCode,
+        el("div", { class: "row-actions", style: "margin-top:0.75rem;" }, [
+          el("a", { class: "btn", href: data.preview_url, target: "_blank", rel: "noopener", text: "開啟" }),
+          copyLink, copyPass
+        ])
+      ],
+      actions: [{ label: "關閉", cls: "", onClick: function (close) { close(); } }]
+    });
+  }
+
+  function openResetModal(it) {
+    var keyInput = el("textarea", { class: "text", rows: "4", placeholder: "貼上復原私鑰（recovery-keygen 產生的私鑰；未加密為 base64，或加密後的 JSON 檔內容）", style: "width:100%;box-sizing:border-box;font-family:monospace;" });
+    var passInput = el("input", { class: "text", type: "password", placeholder: "若私鑰有加密保護，輸入其 passphrase（否則留空）", style: "width:100%;box-sizing:border-box;margin-top:0.5rem;" });
+    var errBox = el("div", { class: "msg-err" });
+    var close = modal({
+      title: "Reset & 重新分享（換 passphrase）",
+      bodyNodes: [
+        el("p", { class: "admin-muted", text: "用離線復原私鑰在本機還原內容金鑰，換上全新 passphrase 產生新連結，並作廢舊連結。私鑰只在瀏覽器使用，不會上傳。" }),
+        keyInput, passInput, errBox
+      ],
+      actions: [
+        { label: "取消", cls: "", onClick: function (c) { c(); } },
+        { label: "Reset", cls: "btn-primary", onClick: function (c) {
+          errBox.textContent = "";
+          api.recoveryDek(it.kind, it.id)
+            .then(function (data) {
+              return resolvePrivateKey(keyInput.value, passInput.value)
+                .then(function (privB64) { return window.AgentGateCrypto.recoverDek(privB64, data.wrap_recov); });
+            })
+            .then(function (dek) {
+              var newPass = window.AgentGateCrypto.randomPassphrase();
+              return window.AgentGateCrypto.rewrapUnderPassphrase(dek, newPass)
+                .then(function (wrap) {
+                  return api.resetReshare(it.kind, it.id, { salt: wrap.salt, iv_p: wrap.iv_p, wrap_pass: wrap.wrap_pass });
+                })
+                .then(function (res) { c(); showResetResult(res, newPass); loadTable(); });
+            })
+            .catch(function (e) {
+              if (e && e.status === 409) {
+                errBox.textContent = "此分享沒有復原金鑰（在啟用復原前上傳），無法 Reset。可改用 Revoke 或刪除。";
+              } else {
+                errBox.textContent = (e && e.message) || "Reset 失敗（私鑰是否正確？）";
+              }
+            });
+        } }
+      ]
+    });
+    return close;
   }
 
   function alertError(e) {
