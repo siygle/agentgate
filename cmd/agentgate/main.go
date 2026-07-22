@@ -93,6 +93,8 @@ func main() {
 		runKeyGen(args)
 	case "key-get":
 		runKeyGet()
+	case "recovery-keygen":
+		runRecoveryKeygen(args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
 		printUsage()
@@ -114,6 +116,7 @@ Commands:
   rekey       [-s server] [-p newpass] [-m master] <id|url>                  Reset a share's passphrase (re-key in place)
   key-gen     [key]                                                         Generate or set a passphrase
   key-get                                                                   Print current passphrase
+  recovery-keygen [-o file] [-p passphrase]                                 Generate an offline owner recovery keypair
 
 TTL examples: 12h, 7d, 30m. Server default is 7d.
 Use --no-expiry to keep the share indefinitely (mutually exclusive with -t/--ttl).
