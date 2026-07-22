@@ -296,6 +296,69 @@ setting the `SESSION_SECRET`/`OWNER_KEY` secrets (`wrangler secret put`) and the
 > only Cloudflare IP ranges, or (3) Authenticated Origin Pulls (mTLS). The Worker
 > backend has no such concern (it runs on Cloudflare).
 
+### Owner reset & re-share (recovery key)
+
+For shares uploaded with a recovery key configured, an owner who has lost the
+original passphrase can recover the content and mint a fresh link without ever
+sending the private key to the server. This is the v2 envelope scheme: the
+share's content key (DEK) is wrapped both under the passphrase and, optionally,
+under an offline recovery public key (ECDH-P256 -> HKDF-SHA256 -> AES-256-GCM).
+The private half of that keypair never touches the server or the database —
+it is only ever pasted into the browser tab performing the reset.
+
+**1. Generate a recovery keypair (offline, once per deployment):**
+
+```bash
+go run ./cmd/agentgate recovery-keygen -o /path/to/recovery.key
+# optionally encrypt the key file at rest:
+go run ./cmd/agentgate recovery-keygen -o /path/to/recovery.key -p <a-strong-passphrase>
+```
+
+This prints the recovery **public** key to stdout and writes the **private**
+key to `-o` (mode `0600`). Store the private key file **OFFLINE** — e.g. a
+password manager, an air-gapped drive, or a hardware token. Anyone holding it
+can recover every v2 share ever uploaded with the matching public key, so
+treat it like a master key. Shares uploaded **without** a recovery key
+configured at all have no recovery path — they can only be revoked or
+deleted, never reset.
+
+**2. Enable it on the uploader — but only after the server is ready:**
+
+```bash
+export AGENTGATE_RECOVERY_PUBKEY="<the public key printed above>"
+go run ./cmd/agentgate diff -s https://your-domain.com -p <passphrase> my.diff
+```
+
+> ⚠️ **Rollout ordering matters.** Only set `AGENTGATE_RECOVERY_PUBKEY` on the
+> uploader **after** you have deployed a v2-capable server *and* the matching
+> v2-capable web viewer. If the uploader is configured with a recovery pubkey
+> before the server/viewer understand v2 envelopes, the recovery wrap is
+> silently dropped and the affected shares can **never** be decrypted or
+> recovered again — this is silent, unrecoverable data loss, not a visible
+> error. When in doubt, deploy the server/viewer first, confirm a v2 upload
+> round-trips (see `cmd/crossvector` for the Go<->JS interop check), and only
+> then flip on `AGENTGATE_RECOVERY_PUBKEY` for uploaders.
+
+**3. Reset a share from `/admin`:**
+
+In the owner dashboard, a share that was uploaded with a recovery key shows a
+**Reset 換金鑰** action. Clicking it prompts for the offline recovery private
+key (pasted locally into the browser — it is never sent to the server) and:
+
+1. Unwraps the share's DEK in-browser using the pasted recovery private key
+   (`wrap_recov`, ECDH + HKDF + AES-GCM).
+2. Generates a fresh random passphrase and re-wraps the same DEK under it
+   (new salt/iv; the underlying content ciphertext is untouched).
+3. Uploads the new wrap to the server, which mints a new share id/link and
+   revokes the old one in the same operation.
+
+The dashboard then displays the new link and the new (randomly generated)
+passphrase — copy both to whoever needs access. The **old** link stops
+resolving (404 / revoked) and the **old** passphrase can no longer decrypt
+anything, since the underlying source record has been revoked. Shares
+uploaded without a recovery key (no `wrap_recov`) cannot be reset this way;
+the dashboard falls back to Revoke or Delete for those.
+
 ### Blob storage (self-host)
 
 By default the encrypted blob is stored inline in the SQLite `encrypted_data`
@@ -446,6 +509,7 @@ Two interchangeable backends behind one shared HTTP API and frontend:
 ```
 cmd/server/        Self-host server entry point
 cmd/agentgate/     CLI entry point (shared by both backends)
+cmd/crossvector/   Go<->JS v2-envelope interop test vector (regression check)
 internal/server/   HTTP handlers, router, middleware
 internal/db/       SQLite database layer
 internal/crypto/   AES-256-GCM encryption (CLI)
