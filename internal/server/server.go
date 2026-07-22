@@ -110,6 +110,8 @@ func New(db *sql.DB, baseURL string, staticFS fs.FS, blobs *blobstore.Store, adm
 			r.Patch("/api/admin/{kind}/{id}", s.handleAdminKeepForever)
 			r.Post("/api/admin/{kind}/{id}/revoke", s.handleAdminRevoke)
 			r.Post("/api/admin/{kind}/{id}/reshare", s.handleAdminReshare)
+			r.Get("/api/admin/{kind}/{id}/recovery-dek", s.handleAdminRecoveryDek)
+			r.Post("/api/admin/{kind}/{id}/reset-reshare", s.handleAdminResetReshare)
 			r.Delete("/api/admin/{kind}/{id}", s.handleAdminDelete)
 		})
 	})
