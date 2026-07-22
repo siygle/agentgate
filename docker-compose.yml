@@ -11,6 +11,17 @@ services:
       # inline in SQLite (self-host analog of the Worker's R2 mode) — keeps the
       # DB lean and handles larger bundles. Unset it to store blobs inline.
       AGENTGATE_BLOB_DIR: ${AGENTGATE_BLOB_DIR:-/data/blobs}
+      # Owner (instance-admin) dashboard at /admin. These must be forwarded
+      # explicitly: values set in a Dokploy/host .env are only used for ${...}
+      # interpolation, not auto-injected into the container. An empty
+      # AGENTGATE_SESSION_SECRET disables the admin subsystem (fail closed).
+      AGENTGATE_SESSION_SECRET: ${AGENTGATE_SESSION_SECRET:-}
+      AGENTGATE_OWNER_KEY: ${AGENTGATE_OWNER_KEY:-}
+      AGENTGATE_SESSION_TTL: ${AGENTGATE_SESSION_TTL:-}
+      AGENTGATE_CF_ACCESS_ENABLED: ${AGENTGATE_CF_ACCESS_ENABLED:-}
+      AGENTGATE_CF_ACCESS_TEAM_DOMAIN: ${AGENTGATE_CF_ACCESS_TEAM_DOMAIN:-}
+      AGENTGATE_CF_ACCESS_AUD: ${AGENTGATE_CF_ACCESS_AUD:-}
+      AGENTGATE_CF_ACCESS_EMAILS: ${AGENTGATE_CF_ACCESS_EMAILS:-}
 
 volumes:
   data:
