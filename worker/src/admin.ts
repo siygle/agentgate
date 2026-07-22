@@ -319,4 +319,80 @@ admin.post("/:kind/:id/reshare", requireAdmin, async (c) => {
   });
 });
 
+// GET /api/admin/:kind/:id/recovery-dek — return wrap_recov for offline unwrap.
+admin.get("/:kind/:id/recovery-dek", requireAdmin, async (c) => {
+  const kind = kindParam(c);
+  if (!kind) return fail(c, "not found", 404);
+  const id = c.req.param("id") ?? "";
+  const text = await getShareCiphertext(c.env, kind, id);
+  if (text === null) return fail(c, "not found", 404);
+  let env: Record<string, unknown>;
+  try {
+    env = JSON.parse(text);
+  } catch {
+    return fail(c, "internal server error", 500);
+  }
+  if (env.wrap_recov == null) {
+    return fail(c, "share is not reset-capable (no recovery key)", 409);
+  }
+  return ok(c, { v: 2, wrap_recov: env.wrap_recov });
+});
+
+// POST /api/admin/:kind/:id/reset-reshare — new share, new passphrase wrap,
+// keep ciphertext + wrap_recov, revoke source.
+admin.post("/:kind/:id/reset-reshare", requireAdmin, async (c) => {
+  const kind = kindParam(c);
+  if (!kind) return fail(c, "not found", 404);
+  if (!checkOrigin(c)) return fail(c, "bad origin", 403);
+  const id = c.req.param("id") ?? "";
+
+  let body: { salt?: string; iv_p?: string; wrap_pass?: string; never_expires?: boolean; expires_in_seconds?: number };
+  try {
+    body = await c.req.json();
+  } catch {
+    return fail(c, "invalid JSON body", 400);
+  }
+  if (!body.salt || !body.iv_p || !body.wrap_pass) {
+    return fail(c, "salt, iv_p, and wrap_pass are required", 400);
+  }
+
+  const text = await getShareCiphertext(c.env, kind, id);
+  if (text === null) return fail(c, "not found", 404);
+  let env: Record<string, unknown>;
+  try {
+    env = JSON.parse(text);
+  } catch {
+    return fail(c, "internal server error", 500);
+  }
+  if (env.wrap_recov == null) {
+    return fail(c, "share is not reset-capable (no recovery key)", 409);
+  }
+  // Swap ONLY the passphrase wrap; keep ciphertext, iv, wrap_recov, v.
+  env.salt = body.salt;
+  env.iv_p = body.iv_p;
+  env.wrap_pass = body.wrap_pass;
+
+  const newId = generateId();
+  const { token, hash } = await generateOwnerToken();
+  const neverExpires = !!body.never_expires;
+  const expiredAt = neverExpires
+    ? NEVER_EXPIRES_AT
+    : nowSeconds() + (body.expires_in_seconds && body.expires_in_seconds > 0 ? body.expires_in_seconds : DEFAULT_TTL_SECONDS);
+  try {
+    await createShare(c.env, kind, newId, JSON.stringify(env), expiredAt, neverExpires, hash);
+  } catch {
+    return fail(c, "internal server error", 500);
+  }
+  // Revoke the source (mirror the revoke handler: never_expires=0, expired_at=now).
+  await setNeverExpires(c.env, kind, id, false, nowSeconds());
+
+  const previewURL = c.env.BASE_URL + (kind === "diff" ? "/p/" : "/f/") + newId;
+  return ok(c, {
+    preview_url: previewURL,
+    manage_url: previewURL + "#owner=" + token,
+    id: newId,
+    owner_token: token,
+  });
+});
+
 export default admin;
