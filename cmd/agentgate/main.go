@@ -93,6 +93,8 @@ func main() {
 		runKeyGen(args)
 	case "key-get":
 		runKeyGet()
+	case "recovery-keygen":
+		runRecoveryKeygen(args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", subcmd)
 		printUsage()
@@ -114,6 +116,7 @@ Commands:
   rekey       [-s server] [-p newpass] [-m master] <id|url>                  Reset a share's passphrase (re-key in place)
   key-gen     [key]                                                         Generate or set a passphrase
   key-get                                                                   Print current passphrase
+  recovery-keygen [-o file] [-p passphrase]                                 Generate an offline owner recovery keypair
 
 TTL examples: 12h, 7d, 30m. Server default is 7d.
 Use --no-expiry to keep the share indefinitely (mutually exclusive with -t/--ttl).
@@ -284,6 +287,26 @@ func extractFilename(patch string) string {
 	return "unknown"
 }
 
+// buildCreateBody produces the request body's encrypted_data. It emits the v1
+// {ciphertext,iv,salt} shape unless AGENTGATE_RECOVERY_PUBKEY (recoveryPubB64)
+// is set, in which case it emits a v2 Envelope (adding the recovery wrap).
+func buildCreateBody(plaintext, passphrase, recoveryPubB64 string) (map[string]any, error) {
+	if recoveryPubB64 == "" {
+		ciphertext, iv, salt, err := crypto.Encrypt(plaintext, passphrase)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"encrypted_data": map[string]string{"ciphertext": ciphertext, "iv": iv, "salt": salt},
+		}, nil
+	}
+	env, err := crypto.EncryptEnvelope(plaintext, passphrase, recoveryPubB64)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"encrypted_data": env}, nil
+}
+
 func encryptAndPost(server, endpoint string, payload any, passphrase, master, ttl string, noExpiry, generated bool) {
 	encryptAndPostMode(server, endpoint, payload, passphrase, master, ttl, noExpiry, generated, "")
 }
@@ -300,18 +323,10 @@ func encryptAndPostMode(server, endpoint string, payload any, passphrase, master
 		os.Exit(1)
 	}
 
-	ciphertext, iv, salt, err := crypto.Encrypt(string(jsonBytes), passphrase)
+	body, err := buildCreateBody(string(jsonBytes), passphrase, os.Getenv("AGENTGATE_RECOVERY_PUBKEY"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error encrypting: %v\n", err)
 		os.Exit(1)
-	}
-
-	body := map[string]any{
-		"encrypted_data": map[string]string{
-			"ciphertext": ciphertext,
-			"iv":         iv,
-			"salt":       salt,
-		},
 	}
 	if ttl != "" {
 		seconds, err := parseTTLSeconds(ttl)

@@ -60,6 +60,12 @@
     reshare: function (kind, id, opts) {
       return req("POST", "/api/admin/" + kind + "/" + encodeURIComponent(id) + "/reshare", opts || {});
     },
+    recoveryDek: function (kind, id) {
+      return req("GET", "/api/admin/" + kind + "/" + encodeURIComponent(id) + "/recovery-dek");
+    },
+    resetReshare: function (kind, id, body) {
+      return req("POST", "/api/admin/" + kind + "/" + encodeURIComponent(id) + "/reset-reshare", body || {});
+    },
     remove: function (kind, id) {
       return req("DELETE", "/api/admin/" + kind + "/" + encodeURIComponent(id));
     }

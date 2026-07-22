@@ -450,7 +450,7 @@
     if (P) P.showDecryptingState();
 
     window.AgentGateCrypto
-      .decrypt(encrypted.ciphertext, encrypted.iv, encrypted.salt, passphrase)
+      .decryptShare(encrypted, passphrase)
       .then(function (plaintext) {
         var data = JSON.parse(plaintext);
         if (remember && P) P.storePassphrase(passphrase);

@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -400,6 +401,187 @@ func (s *Server) handleAdminReshare(w http.ResponseWriter, r *http.Request) {
 		if newBlobKey != "" {
 			_ = s.blobs.Delete(newBlobKey) // roll back the copied blob
 		}
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+
+	previewURL := s.baseURL + prefix + newID
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: createResponseData{
+		PreviewURL: previewURL,
+		ManageURL:  previewURL + "#owner=" + ownerToken,
+		ID:         newID,
+		OwnerToken: ownerToken,
+	}})
+}
+
+// loadEncryptedData returns a share's full encrypted_data JSON (from inline
+// storage or the filesystem blob), or found=false when absent.
+func (s *Server) loadEncryptedData(kind, recordID string) (encJSON string, found bool, err error) {
+	enc, blobKey, _, _, ok, e := s.loadShare(kind, recordID)
+	if e != nil || !ok {
+		return "", ok, e
+	}
+	if blobKey != "" {
+		if !s.blobs.Enabled() {
+			return "", true, errors.New("blob storage not configured for this record")
+		}
+		data, ge := s.blobs.Get(blobKey)
+		if ge != nil {
+			return "", true, ge
+		}
+		return data, true, nil
+	}
+	return enc, true, nil
+}
+
+// handleAdminRecoveryDek returns the recovery-wrapped DEK (wrap_recov) so the
+// operator can unwrap it offline. Safe to expose to an authenticated admin —
+// useless without the offline recovery private key. 409 when the share has no
+// recovery wrap (v1 or uploaded without a recovery key).
+func (s *Server) handleAdminRecoveryDek(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	kind := chi.URLParam(r, "kind")
+	if _, _, ok := kindFromParam(kind); !ok {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	recordID := chi.URLParam(r, "id")
+	encJSON, found, err := s.loadEncryptedData(kind, recordID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(encJSON), &env); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	wrapRecov, ok := env["wrap_recov"]
+	if !ok || len(wrapRecov) == 0 || string(wrapRecov) == "null" {
+		writeJSON(w, http.StatusConflict, apiResponse{Success: false, Error: "share is not reset-capable (no recovery key)"})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"v": 2, "wrap_recov": wrapRecov,
+	}})
+}
+
+type resetReshareRequest struct {
+	Salt             string `json:"salt"`
+	IVP              string `json:"iv_p"`
+	WrapPass         string `json:"wrap_pass"`
+	NeverExpires     bool   `json:"never_expires,omitempty"`
+	ExpiresInSeconds int64  `json:"expires_in_seconds,omitempty"`
+}
+
+// handleAdminResetReshare mints a new share for the same content under a NEW
+// passphrase wrap (supplied by the browser after it recovered the DEK offline),
+// keeping ciphertext + wrap_recov, then revokes the source. The server never
+// decrypts.
+func (s *Server) handleAdminResetReshare(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	kind := chi.URLParam(r, "kind")
+	_, prefix, ok := kindFromParam(kind)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	if !s.checkOrigin(r) {
+		writeJSON(w, http.StatusForbidden, apiResponse{Success: false, Error: "bad origin"})
+		return
+	}
+	recordID := chi.URLParam(r, "id")
+
+	var req resetReshareRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
+		return
+	}
+	if req.Salt == "" || req.IVP == "" || req.WrapPass == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "salt, iv_p, and wrap_pass are required"})
+		return
+	}
+
+	encJSON, found, err := s.loadEncryptedData(kind, recordID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(encJSON), &env); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if wr, ok := env["wrap_recov"]; !ok || len(wr) == 0 || string(wr) == "null" {
+		writeJSON(w, http.StatusConflict, apiResponse{Success: false, Error: "share is not reset-capable (no recovery key)"})
+		return
+	}
+	// Swap ONLY the passphrase wrap; keep ciphertext, iv, wrap_recov, v.
+	env["salt"], _ = json.Marshal(req.Salt)
+	env["iv_p"], _ = json.Marshal(req.IVP)
+	env["wrap_pass"], _ = json.Marshal(req.WrapPass)
+	newEnc, err := json.Marshal(env)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if int64(len(newEnc)) > s.maxUploadBytes {
+		s.writeTooLarge(w)
+		return
+	}
+
+	newID := id.Generate()
+	inlineData := string(newEnc)
+	newBlobKey := ""
+	if s.blobs.Enabled() {
+		newBlobKey = blobstore.Key(kind, newID)
+		if perr := s.blobs.Put(newBlobKey, string(newEnc)); perr != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			return
+		}
+		inlineData = ""
+	}
+
+	var expiry time.Time
+	if req.NeverExpires {
+		expiry = sentinelNeverExpiry
+	} else {
+		expiry = time.Now().Add(resolveExpiry(req.ExpiresInSeconds))
+	}
+	ownerToken, ownerHash, err := generateOwnerToken()
+	if err != nil {
+		if newBlobKey != "" {
+			_ = s.blobs.Delete(newBlobKey)
+		}
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	var createErr error
+	switch kind {
+	case "diff":
+		createErr = db.CreateDiff(s.db, newID, inlineData, newBlobKey, expiry, req.NeverExpires, ownerHash)
+	case "files":
+		createErr = db.CreateFileBundle(s.db, newID, inlineData, newBlobKey, expiry, req.NeverExpires, ownerHash)
+	}
+	if createErr != nil {
+		if newBlobKey != "" {
+			_ = s.blobs.Delete(newBlobKey)
+		}
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+
+	// Revoke the source (mirrors handleAdminRevoke).
+	now := time.Now().UTC()
+	if err := s.setNeverExpires(kind, recordID, false, &now); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
 		return
 	}

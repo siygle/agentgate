@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -412,6 +413,68 @@ func runRekey(args []string) {
 			}
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// recovery-keygen
+// ---------------------------------------------------------------------------
+
+// buildRecoveryKeygen creates a recovery keypair. It returns the base64 public
+// key (for AGENTGATE_RECOVERY_PUBKEY) and the private-key file contents. When
+// protectPass is non-empty the private key is encrypted under it (JSON blob);
+// otherwise the raw base64 scalar is returned.
+func buildRecoveryKeygen(protectPass string) (pubB64, privFile string, err error) {
+	priv, pub, err := crypto.GenerateRecoveryKey()
+	if err != nil {
+		return "", "", err
+	}
+	if protectPass == "" {
+		return pub, priv, nil
+	}
+	ct, iv, salt, err := crypto.Encrypt(priv, protectPass)
+	if err != nil {
+		return "", "", err
+	}
+	blob, err := json.Marshal(map[string]any{
+		"enc": map[string]string{"ciphertext": ct, "iv": iv, "salt": salt},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return pub, string(blob), nil
+}
+
+// runRecoveryKeygen is the `agentgate recovery-keygen [-o file] [-p passphrase]`
+// entrypoint. The public key goes to stdout; the private key is written to the
+// -o path (or stdout with a warning) and MUST be stored offline.
+func runRecoveryKeygen(args []string) {
+	fs := flag.NewFlagSet("recovery-keygen", flag.ExitOnError)
+	out := fs.String("o", "", "write the private key to this file (recommended)")
+	protect := fs.String("p", "", "encrypt the private key at rest under this passphrase")
+	_ = fs.Parse(args)
+
+	pub, privFile, err := buildRecoveryKeygen(*protect)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error generating recovery key: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Recovery PUBLIC key (set as AGENTGATE_RECOVERY_PUBKEY on your uploader):")
+	fmt.Println(pub)
+	if *out != "" {
+		if err := os.WriteFile(*out, []byte(privFile+"\n"), 0o600); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing private key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "\nPrivate key written to %s (mode 0600). Store it OFFLINE — it can recover every v2 share.\n", *out)
+	} else {
+		fmt.Println("\nRecovery PRIVATE key (store OFFLINE; never put on a server):")
+		fmt.Println(privFile)
+	}
+	fmt.Fprintln(os.Stderr, "\n⚠️  Do NOT set AGENTGATE_RECOVERY_PUBKEY until your AgentGate server AND web")
+	fmt.Fprintln(os.Stderr, "    viewer both support v2 envelopes. Setting it against an older server")
+	fmt.Fprintln(os.Stderr, "    causes SILENT, UNRECOVERABLE data loss (the wrapped key is dropped and")
+	fmt.Fprintln(os.Stderr, "    the share can never be decrypted). Enable it only after the v2 server")
+	fmt.Fprintln(os.Stderr, "    and viewer are deployed.")
 }
 
 // ---------------------------------------------------------------------------

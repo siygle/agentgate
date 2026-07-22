@@ -48,6 +48,12 @@ Create an encrypted share. Body:
 
 - `400` if `ciphertext`/`iv`/`salt` missing or empty.
 
+`encrypted_data` is stored **verbatim** as an opaque object: the server validates only
+that `ciphertext`/`iv`/`salt` are present and non-empty, then persists (and later
+returns) whatever JSON object was sent, unchanged. This lets clients add extra keys —
+e.g. the v2 envelope's `v`, `iv_p`, `wrap_pass`, `wrap_recov` — without any server-side
+schema change; a later `GET` returns them exactly as uploaded.
+
 ### `GET /api/diff/{id}` · `GET /api/files/{id}`
 
 Fetch a share's ciphertext + expiry metadata (used by the frontend, Plan B).
@@ -165,6 +171,25 @@ Optional body `{ "never_expires?", "expires_in_seconds?" }` sets the new record'
 
 Hard-deletes the record now and unlinks its filesystem/R2 blob. `200 OK`:
 `{ "id", "kind", "deleted": true }`. `404` unknown kind or id.
+
+### `GET /api/admin/{kind}/{id}/recovery-dek` (requires admin session)
+
+Returns the recovery-wrapped DEK so the operator can unwrap it offline with the
+recovery private key. `200 OK`: `{ "success": true, "data": { "v": 2,
+"wrap_recov": { "epk", "iv", "ct" } } }`. `409` when the share has no recovery
+wrap (v1, or uploaded without a recovery key). `404` unknown kind/id. Safe to
+expose to an authenticated admin — useless without the offline private key.
+
+### `POST /api/admin/{kind}/{id}/reset-reshare` (requires admin session)
+
+Mints a new share for the same content under a NEW passphrase wrap and revokes
+the source (old passphrase can no longer decrypt anything reachable). Body:
+`{ "salt", "iv_p", "wrap_pass" }` (all required — the browser computes these
+after recovering the DEK offline) plus optional `{ "never_expires",
+"expires_in_seconds" }`. The server keeps `ciphertext`, `iv`, and `wrap_recov`
+from the source unchanged. `200 OK`: create shape (`preview_url`, `manage_url`,
+`id`, `owner_token`). `409` not reset-capable; `400` missing wrap fields; `404`
+unknown kind/id. Origin-checked.
 
 ## Page routes (Plan B: static HTML + fetch)
 

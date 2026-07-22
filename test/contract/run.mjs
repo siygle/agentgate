@@ -168,6 +168,24 @@ async function main() {
   const txt = await r.text();
   check("GET /llms.txt -> 200 with base url", r.status === 200 && txt.includes(BASE));
 
+  // --- v2 envelope passthrough (server stores encrypted_data verbatim) ---
+  const v2ed = {
+    v: 2, ciphertext: "djJjdA==", iv: "djJpdg==", salt: "djJzYWx0",
+    iv_p: "djJpdnA=", wrap_pass: "djJ3cA==",
+    wrap_recov: { epk: "ZXBr", iv: "cml2", ct: "cmN0" },
+  };
+  r = await fetch(`${BASE}/api/files`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ encrypted_data: v2ed }),
+  });
+  check("POST v2 envelope -> 201", r.status === 201, `got ${r.status}`);
+  const v2id = (await r.json()).data?.id;
+  r = await fetch(`${BASE}/api/files/${v2id}`);
+  body = await r.json();
+  check("v2 get preserves wrap_pass", body.data?.encrypted_data?.wrap_pass === v2ed.wrap_pass);
+  check("v2 get preserves wrap_recov.epk", body.data?.encrypted_data?.wrap_recov?.epk === "ZXBr");
+  check("v2 get preserves version", body.data?.encrypted_data?.v === 2);
+
   // --- admin dashboard ---
   // Always: the protected surface must be gated on both backends.
   r = await fetch(`${BASE}/api/admin/shares`);
@@ -257,6 +275,52 @@ async function main() {
 
     r = await fetch(`${BASE}/api/admin/bogus/x`, { method: "DELETE", headers: H });
     check("admin unknown kind -> 404", r.status === 404, `got ${r.status}`);
+
+    // --- reset-reshare (v2) + recovery-dek ---
+    const RCT = "cmVzZXQtY3Q=";
+    const rr = await fetch(`${BASE}/api/diff`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encrypted_data: {
+        v: 2, ciphertext: RCT, iv: "aXY=", salt: "c2E=",
+        iv_p: "aXZw", wrap_pass: "d3A=", wrap_recov: { epk: "ZQ==", iv: "aQ==", ct: "Yw==" },
+      } }),
+    });
+    const rsSrc = (await rr.json()).data?.id;
+
+    r = await fetch(`${BASE}/api/admin/diff/${rsSrc}/recovery-dek`, { headers: H });
+    body = await r.json();
+    check("recovery-dek -> 200 wrap_recov", r.status === 200 && body.data?.wrap_recov?.epk === "ZQ==");
+
+    r = await fetch(`${BASE}/api/admin/diff/${rsSrc}/reset-reshare`, {
+      method: "POST", headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ salt: "bmV3cw==", iv_p: "bmV3aXZw", wrap_pass: "bmV3d3A=" }),
+    });
+    body = await r.json();
+    const rsNew = body.data?.id;
+    check("reset-reshare -> 200 new id", r.status === 200 && !!rsNew && rsNew !== rsSrc);
+
+    r = await fetch(`${BASE}/api/diff/${rsNew}`);
+    body = await r.json();
+    check("reset-reshare new share: new wrap_pass", body.data?.encrypted_data?.wrap_pass === "bmV3d3A=");
+    check("reset-reshare new share: same ciphertext", body.data?.encrypted_data?.ciphertext === RCT);
+    check("reset-reshare new share: wrap_recov preserved", body.data?.encrypted_data?.wrap_recov?.epk === "ZQ==");
+
+    r = await fetch(`${BASE}/api/diff/${rsSrc}`);
+    check("reset-reshare source revoked -> 404", r.status === 404, `got ${r.status}`);
+
+    // v1 share is not reset-capable.
+    const v1r = await fetch(`${BASE}/api/diff`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encrypted_data: { ciphertext: "djE=", iv: "aXY=", salt: "c2E=" } }),
+    });
+    const v1id = (await v1r.json()).data?.id;
+    r = await fetch(`${BASE}/api/admin/diff/${v1id}/recovery-dek`, { headers: H });
+    check("recovery-dek on v1 -> 409", r.status === 409, `got ${r.status}`);
+    r = await fetch(`${BASE}/api/admin/diff/${v1id}/reset-reshare`, {
+      method: "POST", headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ salt: "a", iv_p: "b", wrap_pass: "c" }),
+    });
+    check("reset-reshare on v1 -> 409", r.status === 409, `got ${r.status}`);
 
     r = await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: H });
     check("admin logout -> 200", r.status === 200, `got ${r.status}`);
