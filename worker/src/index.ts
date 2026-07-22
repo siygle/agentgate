@@ -95,7 +95,11 @@ app.route("/api/admin", adminApp);
 // ---------------------------------------------------------------------------
 
 interface CreateBody {
-  encrypted_data?: { ciphertext?: string; iv?: string; salt?: string };
+  encrypted_data?: Record<string, unknown> & {
+    ciphertext?: string;
+    iv?: string;
+    salt?: string;
+  };
   expires_in_seconds?: number;
   never_expires?: boolean;
 }
@@ -113,7 +117,7 @@ async function handleCreate(c: Ctx, kind: Kind): Promise<Response> {
     return fail(c, "encrypted_data must include non-empty ciphertext, iv, and salt", 400);
   }
 
-  const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
+  const encJson = JSON.stringify(ed); // verbatim: preserves v2 fields (v, iv_p, wrap_pass, wrap_recov)
   const limit = maxUploadBytes(c.env);
   if (encJson.length > limit) return tooLarge(c, limit);
   const id = generateId();
@@ -242,7 +246,7 @@ async function handleReplace(c: Ctx, kind: Kind): Promise<Response> {
     return fail(c, "encrypted_data must include non-empty ciphertext, iv, and salt", 400);
   }
 
-  const encJson = JSON.stringify({ ciphertext: ed.ciphertext, iv: ed.iv, salt: ed.salt });
+  const encJson = JSON.stringify(ed); // verbatim: preserves v2 fields (v, iv_p, wrap_pass, wrap_recov)
   const limit = maxUploadBytes(c.env);
   if (encJson.length > limit) return tooLarge(c, limit);
 
