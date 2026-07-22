@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"encoding/base64"
 	"testing"
 )
 
@@ -68,5 +67,4 @@ func TestRecoverDEKWrongKeyFails(t *testing.T) {
 	if _, err := RecoverDEK(*env.WrapRecov, otherPriv); err == nil {
 		t.Fatalf("recovering with the wrong private key must fail")
 	}
-	_ = base64.StdEncoding
 }

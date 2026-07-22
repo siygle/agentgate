@@ -470,6 +470,11 @@ func runRecoveryKeygen(args []string) {
 		fmt.Println("\nRecovery PRIVATE key (store OFFLINE; never put on a server):")
 		fmt.Println(privFile)
 	}
+	fmt.Fprintln(os.Stderr, "\n⚠️  Do NOT set AGENTGATE_RECOVERY_PUBKEY until your AgentGate server AND web")
+	fmt.Fprintln(os.Stderr, "    viewer both support v2 envelopes. Setting it against an older server")
+	fmt.Fprintln(os.Stderr, "    causes SILENT, UNRECOVERABLE data loss (the wrapped key is dropped and")
+	fmt.Fprintln(os.Stderr, "    the share can never be decrypted). Enable it only after the v2 server")
+	fmt.Fprintln(os.Stderr, "    and viewer are deployed.")
 }
 
 // ---------------------------------------------------------------------------
