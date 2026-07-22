@@ -74,14 +74,30 @@ const defaultExpiry = 7 * 24 * time.Hour
 var sentinelNeverExpiry = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // createRequest is the JSON body for both diff and file-bundle creation.
+//
+// EncryptedData is stored opaquely (json.RawMessage): the server validates
+// only that the core ciphertext/iv/salt fields are present and non-empty,
+// but preserves any additional fields (e.g. v2 envelope fields v, iv_p,
+// wrap_pass, wrap_recov) verbatim.
 type createRequest struct {
-	EncryptedData struct {
+	EncryptedData    json.RawMessage `json:"encrypted_data"`
+	ExpiresInSeconds int64           `json:"expires_in_seconds,omitempty"`
+	NeverExpires     bool            `json:"never_expires,omitempty"`
+}
+
+// validateEncryptedData reports whether the opaque encrypted_data object has
+// non-empty ciphertext, iv, and salt. Extra keys (v2 envelope fields) are
+// allowed and preserved verbatim.
+func validateEncryptedData(raw json.RawMessage) bool {
+	var core struct {
 		Ciphertext string `json:"ciphertext"`
 		IV         string `json:"iv"`
 		Salt       string `json:"salt"`
-	} `json:"encrypted_data"`
-	ExpiresInSeconds int64 `json:"expires_in_seconds,omitempty"`
-	NeverExpires     bool  `json:"never_expires,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &core); err != nil {
+		return false
+	}
+	return core.Ciphertext != "" && core.IV != "" && core.Salt != ""
 }
 
 // updateRequest is the JSON body for PATCH endpoints.
@@ -222,7 +238,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 		return
 	}
 
-	if req.EncryptedData.Ciphertext == "" || req.EncryptedData.IV == "" || req.EncryptedData.Salt == "" {
+	if !validateEncryptedData(req.EncryptedData) {
 		writeJSON(w, http.StatusBadRequest, apiResponse{
 			Success: false,
 			Error:   "encrypted_data must include non-empty ciphertext, iv, and salt",
@@ -442,7 +458,7 @@ func (s *Server) handleReplace(w http.ResponseWriter, r *http.Request, kind stri
 	if !s.decodeCreateBody(w, r, &req) {
 		return
 	}
-	if req.EncryptedData.Ciphertext == "" || req.EncryptedData.IV == "" || req.EncryptedData.Salt == "" {
+	if !validateEncryptedData(req.EncryptedData) {
 		writeJSON(w, http.StatusBadRequest, apiResponse{
 			Success: false,
 			Error:   "encrypted_data must include non-empty ciphertext, iv, and salt",
