@@ -1,6 +1,8 @@
 package crypto
 
 import (
+	"crypto/x509"
+	"encoding/base64"
 	"testing"
 )
 
@@ -57,6 +59,20 @@ func TestEnvelopeRecoveryRoundTrip(t *testing.T) {
 	}
 	if _, err := DecryptEnvelope(rekeyed, "pw-correct"); err == nil {
 		t.Fatalf("old passphrase must no longer decrypt the re-keyed envelope")
+	}
+}
+
+func TestRecoveryKeyPrivateIsPKCS8(t *testing.T) {
+	priv, _, err := GenerateRecoveryKey()
+	if err != nil {
+		t.Fatalf("GenerateRecoveryKey: %v", err)
+	}
+	der, err := base64.StdEncoding.DecodeString(priv)
+	if err != nil {
+		t.Fatalf("priv not base64: %v", err)
+	}
+	if _, err := x509.ParsePKCS8PrivateKey(der); err != nil {
+		t.Fatalf("private key is not valid PKCS8: %v", err)
 	}
 }
 

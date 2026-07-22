@@ -4,8 +4,11 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -74,14 +77,22 @@ func hkdfKey(secret []byte) ([]byte, error) {
 }
 
 // GenerateRecoveryKey returns a new P-256 recovery keypair as standard-base64:
-// privB64 = raw 32-byte scalar; pubB64 = uncompressed point (65 bytes).
+// privB64 = PKCS8 DER (WebCrypto-importable), pubB64 = uncompressed point (65 bytes).
 func GenerateRecoveryKey() (privB64, pubB64 string, err error) {
-	priv, err := ecdh.P256().GenerateKey(rand.Reader)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return "", "", fmt.Errorf("generate recovery key: %w", err)
 	}
-	return base64.StdEncoding.EncodeToString(priv.Bytes()),
-		base64.StdEncoding.EncodeToString(priv.PublicKey().Bytes()), nil
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal recovery key: %w", err)
+	}
+	ecdhPub, err := priv.PublicKey.ECDH()
+	if err != nil {
+		return "", "", fmt.Errorf("convert recovery pubkey: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(der),
+		base64.StdEncoding.EncodeToString(ecdhPub.Bytes()), nil
 }
 
 // WrapDEKPassphrase wraps a DEK under a passphrase with a fresh salt+nonce.
@@ -132,15 +143,24 @@ func eciesWrap(recoveryPubB64 string, dek []byte) (RecovWrap, error) {
 	}, nil
 }
 
-// RecoverDEK unwraps the DEK from a RecovWrap using the recovery private key.
+// RecoverDEK unwraps the DEK from a RecovWrap using the recovery private key
+// (PKCS8 DER, base64).
 func RecoverDEK(w RecovWrap, privB64 string) ([]byte, error) {
-	privBytes, err := base64.StdEncoding.DecodeString(privB64)
+	der, err := base64.StdEncoding.DecodeString(privB64)
 	if err != nil {
 		return nil, fmt.Errorf("decode recovery privkey: %w", err)
 	}
-	priv, err := ecdh.P256().NewPrivateKey(privBytes)
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
 	if err != nil {
 		return nil, fmt.Errorf("parse recovery privkey: %w", err)
+	}
+	ecdsaPriv, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("recovery key is not an ECDSA/EC key")
+	}
+	priv, err := ecdsaPriv.ECDH()
+	if err != nil {
+		return nil, fmt.Errorf("convert recovery privkey: %w", err)
 	}
 	epkBytes, err := base64.StdEncoding.DecodeString(w.EPK)
 	if err != nil {
