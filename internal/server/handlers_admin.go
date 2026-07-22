@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -421,6 +422,9 @@ func (s *Server) loadEncryptedData(kind, recordID string) (encJSON string, found
 		return "", ok, e
 	}
 	if blobKey != "" {
+		if !s.blobs.Enabled() {
+			return "", true, errors.New("blob storage not configured for this record")
+		}
 		data, ge := s.blobs.Get(blobKey)
 		if ge != nil {
 			return "", true, ge
@@ -527,6 +531,10 @@ func (s *Server) handleAdminResetReshare(w http.ResponseWriter, r *http.Request)
 	newEnc, err := json.Marshal(env)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if int64(len(newEnc)) > s.maxUploadBytes {
+		s.writeTooLarge(w)
 		return
 	}
 

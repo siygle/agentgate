@@ -21,6 +21,7 @@ import {
   nowSeconds,
   DEFAULT_TTL_SECONDS,
   NEVER_EXPIRES_AT,
+  maxUploadBytes,
   type Kind,
 } from "./store";
 import {
@@ -372,6 +373,11 @@ admin.post("/:kind/:id/reset-reshare", requireAdmin, async (c) => {
   env.iv_p = body.iv_p;
   env.wrap_pass = body.wrap_pass;
 
+  const newEnc = JSON.stringify(env);
+  if (newEnc.length > maxUploadBytes(c.env)) {
+    return fail(c, "encrypted payload too large", 413);
+  }
+
   const newId = generateId();
   const { token, hash } = await generateOwnerToken();
   const neverExpires = !!body.never_expires;
@@ -379,7 +385,7 @@ admin.post("/:kind/:id/reset-reshare", requireAdmin, async (c) => {
     ? NEVER_EXPIRES_AT
     : nowSeconds() + (body.expires_in_seconds && body.expires_in_seconds > 0 ? body.expires_in_seconds : DEFAULT_TTL_SECONDS);
   try {
-    await createShare(c.env, kind, newId, JSON.stringify(env), expiredAt, neverExpires, hash);
+    await createShare(c.env, kind, newId, newEnc, expiredAt, neverExpires, hash);
   } catch {
     return fail(c, "internal server error", 500);
   }

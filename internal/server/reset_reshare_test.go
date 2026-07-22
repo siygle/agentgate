@@ -64,6 +64,9 @@ func TestRecoveryDekAndResetReshare(t *testing.T) {
 	if ned["wrap_recov"].(map[string]any)["epk"] != "ZQ==" {
 		t.Fatalf("wrap_recov must be preserved on the new share: %v", ned)
 	}
+	if ned["iv"] != "aXY=" {
+		t.Fatalf("iv must be preserved on the new share: %v", ned)
+	}
 
 	// Source is revoked (404).
 	srec := httptest.NewRecorder()
