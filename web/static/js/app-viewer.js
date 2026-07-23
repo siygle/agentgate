@@ -148,7 +148,7 @@
     csp.setAttribute("http-equiv", "Content-Security-Policy");
     csp.setAttribute(
       "content",
-      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+      "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; " +
         "img-src data: blob:; font-src data:; media-src data: blob:; " +
         "connect-src 'none'; form-action 'none'; base-uri 'none'"
     );
