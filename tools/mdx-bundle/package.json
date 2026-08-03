@@ -1,0 +1,17 @@
+{
+  "name": "agentgate-mdx-bundle",
+  "private": true,
+  "type": "module",
+  "description": "Builds web/static/vendor/mdx-runtime.bundle.js. Run only when bumping the pinned MDX/React versions; the output is committed.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@mdx-js/mdx": "3.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

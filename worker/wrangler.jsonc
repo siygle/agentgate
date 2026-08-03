@@ -14,10 +14,22 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-12-30",
 
-  // Static assets: /static/* (css/js/vendor), / (index.html), and the view
-  // shells under /views/* that the Worker serves for /p /f /app /plan /d.
+  // Static assets: /static/* (css/js/vendor/renderers), / (index.html), and the
+  // view shells under /views/* that the Worker serves for /p /f /app /plan /d.
   // Populated from ../web/static by `npm run sync-assets` (single source of truth).
-  "assets": { "directory": "./public", "binding": "ASSETS" },
+  //
+  // html_handling "none": serve ".html" paths literally instead of 307-redirecting
+  // them to an extension-less URL. sandbox.js fetches
+  // /static/renderers/doc/frame.html to build the sandboxed document, and the Go
+  // self-host server returns that directly — without this the two backends differ,
+  // and every document render pays an extra redirect round trip.
+  // The root and the /views/* shells are served by explicit Worker routes, so
+  // nothing depends on the implicit index/extension rewriting.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "none"
+  },
 
   "d1_databases": [
     {

@@ -1,360 +1,16 @@
 (function () {
   "use strict";
 
-  var MIME = {
-    css: "text/css",
-    js: "text/javascript",
-    mjs: "text/javascript",
-    json: "application/json",
-    svg: "image/svg+xml",
-    html: "text/html",
-    txt: "text/plain",
-    xml: "application/xml",
-    // Binary asset types (carried as base64 in the bundle).
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-    ico: "image/x-icon",
-    bmp: "image/bmp",
-    woff: "font/woff",
-    woff2: "font/woff2",
-    ttf: "font/ttf",
-    otf: "font/otf",
-    eot: "application/vnd.ms-fontobject",
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    mp4: "video/mp4",
-    webm: "video/webm",
-    wasm: "application/wasm",
-    pdf: "application/pdf",
-  };
-
-  function normalizeKey(path) {
-    return (path || "")
-      .replace(/^\.?\//, "")
-      .replace(/^\.\//, "")
-      .replace(/[?#].*$/, "");
-  }
-
-  // buildFileMap indexes files by both their full relative path and basename so
-  // references like "css/app.css", "./css/app.css" and "app.css" all resolve.
-  // Each value is an entry { content, encoding }; encoding is "base64" for binary
-  // assets and "" (falsy) for UTF-8 text — a missing encoding means text, which
-  // keeps bundles produced before base64 support rendering unchanged.
-  function buildFileMap(files) {
-    var map = {};
-    files.forEach(function (f) {
-      var name = f.title || "";
-      var entry = { content: f.content || "", encoding: f.encoding || "" };
-      map[normalizeKey(name)] = entry;
-      var base = name.split("/").pop();
-      if (base && !(normalizeKey(base) in map)) {
-        map[normalizeKey(base)] = entry;
-      }
-    });
-    return map;
-  }
-
-  function lookup(map, ref) {
-    if (!ref) return null;
-    if (/^(https?:|data:|blob:|mailto:|#)/i.test(ref)) return null;
-    var key = normalizeKey(ref);
-    if (key in map) return map[key];
-    var base = key.split("/").pop();
-    if (base in map) return map[base];
-    return null;
-  }
-
-  function ext(name) {
-    return (name || "").split(".").pop().toLowerCase();
-  }
-
-  function findEntry(map, files) {
-    if ("index.html" in map) return map["index.html"].content;
-    for (var i = 0; i < files.length; i++) {
-      if (ext(files[i].title) === "html") return files[i].content || "";
-    }
-    return null;
-  }
-
-  // toDataURI turns a bundle entry into a data: URI. Base64 entries (binary
-  // assets) are emitted verbatim as base64; text entries are percent-encoded.
-  function toDataURI(entry, name) {
-    var isBase64 = entry && entry.encoding === "base64";
-    var mime = MIME[ext(name)] || (isBase64 ? "application/octet-stream" : "text/plain");
-    if (isBase64) {
-      return "data:" + mime + ";base64," + entry.content;
-    }
-    return "data:" + mime + ";charset=utf-8," + encodeURIComponent(entry.content);
-  }
-
-  // inlineCSSUrls rewrites url(...) references inside a stylesheet to data URIs
-  // when the referenced asset exists in the bundle (text assets such as SVG).
-  function inlineCSSUrls(css, map) {
-    return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, function (whole, q, ref) {
-      var found = lookup(map, ref);
-      if (found == null) return whole;
-      return "url(" + toDataURI(found, ref) + ")";
-    });
-  }
-
-  // BUILTIN_LIBS maps a short builtin name to a library vendored on the server.
-  // Referencing one of these from an uploaded webapp keeps the library out of the
-  // encrypted payload: it is inlined from /static/vendor at render time instead, so
-  // bundles stay small enough for the D1-only storage ceiling. The sandbox has
-  // connect-src 'none', so inlining is the only way a framed app can use a library
-  // at all. See web/static/vendor/VERSIONS.md.
-  var BUILTIN_LIBS = {
-    "lightweight-charts": { file: "lightweight-charts.standalone.production.js", type: "js" },
-    marked: { file: "marked.min.js", type: "js" },
-    highlight: { file: "highlight.min.js", type: "js" },
-    mermaid: { file: "mermaid.min.js", type: "js" },
-    diff2html: { file: "diff2html.min.js", type: "js" },
-    "highlight-css": { file: "highlight-github.min.css", type: "css" },
-    "highlight-dark-css": { file: "highlight-github-dark.min.css", type: "css" },
-    "diff2html-css": { file: "diff2html.min.css", type: "css" },
-  };
-
-  // buildBuiltinIndex expands each library into every spelling we accept, so all of
-  // these resolve to the same vendored file:
-  //   agentgate:mermaid
-  //   agentgate://vendor/mermaid.js          (short name + type extension)
-  //   agentgate://vendor/mermaid.min.js      (real filename)
-  //   /static/vendor/mermaid.min.js          (server-relative path)
-  function buildBuiltinIndex() {
-    var index = {};
-    Object.keys(BUILTIN_LIBS).forEach(function (name) {
-      var lib = BUILTIN_LIBS[name];
-      var entry = { url: "/static/vendor/" + lib.file, type: lib.type };
-      index["agentgate:" + name] = entry;
-      index["agentgate://vendor/" + name + "." + lib.type] = entry;
-      index["agentgate://vendor/" + lib.file] = entry;
-      index["/static/vendor/" + lib.file] = entry;
-    });
-    return index;
-  }
-
-  var BUILTIN_ASSETS = buildBuiltinIndex();
-  var builtinCache = {};
-
-  // builtinAsset resolves a reference to a vendored library, or null. `want` is
-  // "js" or "css": a <script src> must not pull in a stylesheet and vice versa.
-  function builtinAsset(ref, want) {
-    if (!ref) return null;
-    var entry = BUILTIN_ASSETS[ref.replace(/[?#].*$/, "")];
-    if (!entry || entry.type !== want) return null;
-    return entry;
-  }
-
-  function fetchBuiltinText(url) {
-    if (!builtinCache[url]) {
-      builtinCache[url] = fetch(url, { credentials: "same-origin" }).then(function (res) {
-        if (!res.ok) throw new Error("Failed to load built-in asset " + url + ": " + res.status);
-        return res.text();
-      });
-    }
-    return builtinCache[url];
-  }
-
-  // The capture group preserves the original casing: the escape must neutralise the
-  // tag without editing the content it is protecting (a JS string that happens to hold
-  // "</SCRIPT>" should still read "</SCRIPT>" after the frame parses it).
-  function escapeScriptText(text) {
-    return String(text || "").replace(/<\/(script)/gi, "<\\/$1");
-  }
-
-  // escapeStyleText keeps an inlined stylesheet from closing its own <style> element
-  // when the document is serialized (the HTML serializer writes <style> content as raw
-  // text). "</style" is only meaningful inside a CSS string or comment, where "\/" is a
-  // valid escape; anywhere else the sequence was already broken CSS. This is a
-  // correctness guard, not a security one — the framed app is trusted by itself.
-  function escapeStyleText(text) {
-    return String(text || "").replace(/<\/(style)/gi, "<\\/$1");
-  }
-
-  function assemble(files) {
-    var map = buildFileMap(files);
-    var entry = findEntry(map, files);
-    if (entry == null) {
-      return Promise.resolve({ error: "No index.html (or any .html file) found in this bundle." });
-    }
-
-    var doc = new DOMParser().parseFromString(entry, "text/html");
-
-    // Lock the framed app to an offline, self-contained execution model. Because
-    // every asset is inlined to a data: URI (see below), the app needs no network
-    // at all. connect-src 'none' blocks fetch/XHR/WebSocket/sendBeacon, and
-    // restricting img/font/media/style/script to inline+data: closes the remaining
-    // exfiltration vectors (e.g. new Image().src = '//evil/?' + secret). This runs
-    // on top of the opaque-origin iframe sandbox for defense in depth.
-    var csp = doc.createElement("meta");
-    csp.setAttribute("http-equiv", "Content-Security-Policy");
-    csp.setAttribute(
-      "content",
-      "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; " +
-        "img-src data: blob:; font-src data:; media-src data: blob:; " +
-        "connect-src 'none'; form-action 'none'; base-uri 'none'"
-    );
-    var head = doc.head || doc.getElementsByTagName("head")[0];
-    if (head) {
-      head.insertBefore(csp, head.firstChild);
-    } else {
-      doc.documentElement.insertBefore(csp, doc.documentElement.firstChild);
-    }
-
-    // builtinPromises collects the fetches for vendored libraries referenced via an
-    // agentgate: alias. Bundle-local assets resolve synchronously from `map`; builtins
-    // come off the server, so assembly awaits them before serializing.
-    var builtinPromises = [];
-
-    var links = doc.querySelectorAll('link[rel~="stylesheet"][href]');
-    Array.prototype.forEach.call(links, function (link) {
-      var href = link.getAttribute("href");
-      var css = lookup(map, href);
-      if (css != null) {
-        var style = doc.createElement("style");
-        style.textContent = escapeStyleText(inlineCSSUrls(css.content, map));
-        link.parentNode.replaceChild(style, link);
-        return;
-      }
-
-      var builtinCSS = builtinAsset(href, "css");
-      if (!builtinCSS) return;
-      builtinPromises.push(
-        fetchBuiltinText(builtinCSS.url).then(function (content) {
-          if (!link.parentNode) return;
-          var builtinStyle = doc.createElement("style");
-          // A vendored stylesheet cannot reference bundle assets, so no url() rewrite.
-          builtinStyle.setAttribute("data-agentgate-builtin", href);
-          builtinStyle.textContent = escapeStyleText(content);
-          link.parentNode.replaceChild(builtinStyle, link);
-        })
-      );
-    });
-
-    var inlineStyles = doc.querySelectorAll("style");
-    Array.prototype.forEach.call(inlineStyles, function (style) {
-      style.textContent = escapeStyleText(inlineCSSUrls(style.textContent || "", map));
-    });
-
-    var scripts = doc.querySelectorAll("script[src]");
-    Array.prototype.forEach.call(scripts, function (script) {
-      var src = script.getAttribute("src");
-      var js = lookup(map, src);
-      if (js != null) {
-        var inline = doc.createElement("script");
-        var type = script.getAttribute("type");
-        if (type) inline.setAttribute("type", type);
-        inline.textContent = escapeScriptText(js.content);
-        script.parentNode.replaceChild(inline, script);
-        return;
-      }
-
-      var builtinJS = builtinAsset(src, "js");
-      if (!builtinJS) return;
-      builtinPromises.push(
-        fetchBuiltinText(builtinJS.url).then(function (content) {
-          if (!script.parentNode) return;
-          var inlineBuiltin = doc.createElement("script");
-          var type = script.getAttribute("type");
-          if (type) inlineBuiltin.setAttribute("type", type);
-          inlineBuiltin.setAttribute("data-agentgate-builtin", src);
-          inlineBuiltin.textContent = escapeScriptText(content);
-          script.parentNode.replaceChild(inlineBuiltin, script);
-        })
-      );
-    });
-
-    return Promise.all(builtinPromises).then(function () {
-      var mediaSel = "img[src], source[src], audio[src], video[src], image[href]";
-      var media = doc.querySelectorAll(mediaSel);
-      Array.prototype.forEach.call(media, function (el) {
-        var attr = el.hasAttribute("src") ? "src" : "href";
-        var found = lookup(map, el.getAttribute(attr));
-        if (found == null) return;
-        el.setAttribute(attr, toDataURI(found, el.getAttribute(attr)));
-      });
-
-      // Inject a tiny height reporter so the (sandboxed, opaque-origin) app can
-      // tell the parent its full content height on request via postMessage. This
-      // keeps the security sandbox intact — no allow-same-origin needed — and lets
-      // PDF export expand the iframe to full height so printing paginates instead
-      // of clipping to one page. It only responds to an explicit request message.
-      var reporter = doc.createElement("script");
-      reporter.textContent =
-        "(function(){function h(){var d=document,e=d.documentElement,b=d.body;" +
-        "return Math.max(e?e.scrollHeight:0,e?e.offsetHeight:0,b?b.scrollHeight:0,b?b.offsetHeight:0);}" +
-        "window.addEventListener('message',function(ev){if(ev&&ev.data&&ev.data.__agentgate_request_height){" +
-        "try{parent.postMessage({__agentgate_app_height:h()},'*');}catch(e){}}});})();";
-      (doc.body || doc.documentElement).appendChild(reporter);
-
-      var html = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
-      return { html: html };
-    });
-  }
-
-  // exportAppPdf expands the sandboxed iframe to its full reported height, prints
-  // (so the PDF spans multiple pages), then restores the on-screen height. Falls
-  // back to a plain print if the app does not report a height in time.
-  function exportAppPdf(frame) {
-    if (!frame || !frame.contentWindow) {
-      window.print();
-      return;
-    }
-    var restoreHeight = frame.style.height;
-    var started = false;
-
-    function afterPrint() {
-      frame.style.height = restoreHeight;
-      document.body.classList.remove("agentgate-printing-app");
-      window.removeEventListener("afterprint", afterPrint);
-    }
-
-    // expandAndPrint grows the iframe to full content height so Chrome paginates
-    // it, then restores on afterprint.
-    function expandAndPrint(fullHeight) {
-      if (started) return;
-      started = true;
-      window.removeEventListener("message", onMsg);
-      frame.style.height = fullHeight + "px";
-      document.body.classList.add("agentgate-printing-app");
-      window.addEventListener("afterprint", afterPrint);
-      setTimeout(function () {
-        window.print();
-      }, 200);
-    }
-
-    // plainPrint is the best-effort fallback when no height is reported: print
-    // the page as-is without touching layout (same as before — may clip).
-    function plainPrint() {
-      if (started) return;
-      started = true;
-      window.removeEventListener("message", onMsg);
-      window.print();
-    }
-
-    function onMsg(ev) {
-      if (!ev || !ev.data || typeof ev.data.__agentgate_app_height !== "number") return;
-      expandAndPrint(Math.max(ev.data.__agentgate_app_height, 100));
-    }
-
-    window.addEventListener("message", onMsg);
-    try {
-      frame.contentWindow.postMessage({ __agentgate_request_height: true }, "*");
-    } catch (e) {
-      plainPrint();
-      return;
-    }
-    // Fallback: if the app never reports its height, print best-effort.
-    setTimeout(plainPrint, 800);
-  }
+  // The webapp view: decrypt a bundle that carries its own index.html, then hand it to
+  // AgentGateSandbox to run in an opaque-origin iframe. All of the assembly, builtin
+  // inlining, CSP, and message bridging now lives in sandbox.js, which every share type
+  // shares — this file is only the /app chrome around it.
 
   function renderAppViewer(data, expiresAt) {
     var app = document.getElementById("app");
     if (!app) return;
 
+    var Sandbox = window.AgentGateSandbox;
     var files = data.files || [];
 
     var viewer = document.createElement("div");
@@ -369,7 +25,7 @@
     headerLeft.style.gap = "0.75rem";
 
     var label = document.createElement("span");
-    label.textContent = "webapp \u2014 " + files.length + " file" + (files.length !== 1 ? "s" : "");
+    label.textContent = "webapp — " + files.length + " file" + (files.length !== 1 ? "s" : "");
     headerLeft.appendChild(label);
 
     var meta = window.AgentGateExpiry ? window.AgentGateExpiry.getShareMeta() : null;
@@ -404,10 +60,15 @@
     app.innerHTML = "";
     app.appendChild(viewer);
 
-    assemble(files)
+    if (!Sandbox) {
+      loading.textContent = "Sandbox unavailable — sandbox.js failed to load.";
+      return;
+    }
+
+    Sandbox.assembleWebapp(files)
       .then(function (result) {
         if (loading.parentNode) loading.parentNode.removeChild(loading);
-        var frame = null;
+        var handle = null;
 
         if (result.error) {
           var err = document.createElement("div");
@@ -415,35 +76,30 @@
           err.textContent = result.error;
           viewer.appendChild(err);
         } else {
-          frame = document.createElement("iframe");
-          frame.className = "app-frame";
-          // No allow-same-origin: the app runs in an opaque origin so it cannot
-          // reach this decryption page or other shares. localStorage/cookies are
-          // therefore unavailable to the framed app by design.
-          frame.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups");
-          frame.setAttribute("srcdoc", result.html);
-          viewer.appendChild(frame);
+          // autoHeight is deliberately off here. Uploaded webapps were authored against
+          // a fixed-size viewport and may use vh units or their own internal scrolling;
+          // growing the frame to content height could change how existing shares look.
+          // Built-in renderers, which AgentGate controls, do opt in.
+          handle = Sandbox.mount(viewer, result.html, { autoHeight: false });
         }
 
         if (window.AgentGateExport) {
-          var exportCtx = {
+          window.AgentGateExport.renderExportControl(headerRight, {
             kind: "app",
             title: data.title || "webapp",
             multi: false,
             sources: files.map(function (f) {
               return { name: f.title, content: f.content, encoding: f.encoding };
             }),
-          };
-          if (result.error || !frame) {
-            // Nothing rendered to expand; fall back to a plain print.
-            exportCtx.pdfLive = true;
-          } else {
-            // Expand the sandboxed iframe to full height, then print (paginates).
-            exportCtx.pdfCustom = function () {
-              exportAppPdf(frame);
-            };
-          }
-          window.AgentGateExport.renderExportControl(headerRight, exportCtx);
+            // Expand the frame to full height, then print, so the PDF paginates instead
+            // of clipping to one page. With nothing mounted, fall back to a plain print.
+            pdfCustom: handle
+              ? function () {
+                  Sandbox.printFullHeight(handle);
+                }
+              : null,
+            pdfLive: !handle,
+          });
         }
       })
       .catch(function (err) {
@@ -506,13 +162,4 @@
   }
 
   document.addEventListener("DOMContentLoaded", init);
-
-  window.AgentGateApp = {
-    assemble: assemble,
-    // builtinLibs / resolveBuiltin are exposed so the landing page and tests can
-    // enumerate and check the agentgate: aliases available to uploaded webapps
-    // without duplicating the list.
-    builtinLibs: BUILTIN_LIBS,
-    resolveBuiltin: builtinAsset,
-  };
 })();

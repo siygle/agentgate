@@ -157,6 +157,8 @@ Stylesheets work the same way through `<link rel="stylesheet">`:
 | `agentgate:highlight-css` | `agentgate:highlight` (light theme) |
 | `agentgate:highlight-dark-css` | `agentgate:highlight` (dark theme) |
 | `agentgate:diff2html-css` | `agentgate:diff2html` |
+| `agentgate:tokens` | AgentGate's design tokens (colours, fonts, light/dark) |
+| `agentgate:renderer` | AgentGate's content styles (`.markdown-body`, tables, code blocks) |
 
 ```html
 <link rel="stylesheet" href="agentgate:highlight-css">
@@ -530,7 +532,36 @@ Two interchangeable backends behind one shared HTTP API and frontend:
 - **Self-host server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
 - **Cloudflare Worker** — TypeScript, Hono, D1 (optional R2 for blobs via `USE_R2`), Cron Trigger cleanup
 - **CLI** — Go, cross-compiled to single binaries (unchanged across both backends)
-- **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js; pages fetch ciphertext via the JSON API
+- **Frontend** — Vanilla JS; pages fetch ciphertext via the JSON API and decrypt in the browser
+
+### How share content is rendered
+
+The page you open holds the decryption key, your remembered passphrase, and — if you are
+the operator — an admin session cookie. So it does not interpret share content at all.
+It decrypts, then hands the result to `web/static/js/sandbox.js`, which assembles a
+self-contained document and runs it in an **opaque-origin `<iframe srcdoc>`** under
+`default-src 'none'; connect-src 'none'`. Framed content cannot reach the host page's
+DOM or storage, and cannot make a network request of any kind.
+
+Two things run in that frame:
+
+- **Built-in renderers** (`web/static/renderers/<name>/`) for documents and plans —
+  markdown, MDX, mermaid, syntax highlighting, wireframes. Their scripts are resolved
+  from the server, never from the payload, so a share cannot substitute its own
+  `renderer.js`.
+- **Uploaded webapps** (`agentgate webapp`), which supply their own `index.html`.
+
+Everything outside the frame — header, expiry badge, owner toggle, display settings,
+export, review notes, the address bar — is host chrome in `web/static/js/shell.js`. The
+two sides talk over a small `postMessage` bridge: the frame reports its content height
+(so the host grows the iframe and the page keeps a single scrollbar) and its current
+file and scroll anchor; the host sends display settings, deep links, and print scope.
+Values coming *from* the frame are treated as untrusted and sanitised before use.
+
+Rendering libraries are vendored rather than loaded from a CDN, and inlined into the
+frame on demand via `agentgate:` references — see
+[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md) for why and for the
+pinned versions.
 
 ## Project structure
 
@@ -543,7 +574,16 @@ internal/db/       SQLite database layer
 internal/crypto/   AES-256-GCM encryption (CLI)
 internal/id/       ID generation
 internal/cleanup/  Expired content cleanup (goroutine)
-web/static/        Shared frontend: CSS, JS, vendor libs (see vendor/VERSIONS.md), view shells
+web/static/        Shared frontend (single source of truth for both backends)
+  css/tokens.css     Design tokens + reset — used by host chrome AND the sandbox
+  css/style.css      Host chrome only (never styles share content)
+  css/renderer.css   Share-content styles, inlined into the sandbox
+  js/sandbox.js      Assembles + runs share content in the opaque-origin iframe
+  js/shell.js        Host chrome around a sandboxed renderer
+  renderers/doc/     Built-in renderer for documents and visual plans
+  vendor/            Pinned third-party libs (see vendor/VERSIONS.md)
+  views/             Static page shells for /p /f /app /plan /d
+tools/mdx-bundle/  Builds vendor/mdx-runtime.bundle.js (run only on version bumps)
 worker/            Cloudflare Worker (TypeScript + Hono, D1 + R2)
 test/contract/     HTTP contract test run against both backends
 docs/api-contract.md  Shared API contract (single source of truth)

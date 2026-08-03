@@ -136,6 +136,11 @@ Stylesheets use the same mechanism via ` + "`<link rel=\"stylesheet\">`" + `:
 | ` + "`agentgate:highlight-css`" + ` | ` + "`agentgate:highlight`" + ` (light theme) |
 | ` + "`agentgate:highlight-dark-css`" + ` | ` + "`agentgate:highlight`" + ` (dark theme) |
 | ` + "`agentgate:diff2html-css`" + ` | ` + "`agentgate:diff2html`" + ` |
+| ` + "`agentgate:tokens`" + ` | AgentGate's design tokens (colours, fonts, light/dark) |
+| ` + "`agentgate:renderer`" + ` | AgentGate's content styles (` + "`.markdown-body`" + `, tables, code blocks) |
+
+Link ` + "`agentgate:tokens`" + ` and ` + "`agentgate:renderer`" + ` if you want the webapp to look like the
+rest of AgentGate; skip them and style it yourself otherwise.
 
 Example ` + "`index.html`" + ` using several at once:
 

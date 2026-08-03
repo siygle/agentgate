@@ -200,6 +200,18 @@ viewer decrypts. Missing/expired shares therefore return `200` for the shell and
 from the API (the page then renders a not-found state) — a deliberate change from the
 old server-rendered `404` page.
 
+### Renderer assets
+
+Share content is not rendered by the shell; it runs in a sandboxed iframe built from a
+built-in renderer. Both backends must therefore serve `/static/renderers/**` as static
+assets, and must serve a `.html` path **literally** rather than redirecting it:
+`sandbox.js` fetches `/static/renderers/<name>/frame.html`.
+
+- Go: covered by `//go:embed static` + the `/static/*` file server.
+- Worker: `sync-assets` copies `renderers/` into `public/static/`, and
+  `wrangler.jsonc` sets `assets.html_handling: "none"` — the default would
+  `307` redirect `frame.html` to an extension-less URL.
+
 ## CORS
 
 The **public share API** (`/api/diff*`, `/api/files*`) and pages use permissive,

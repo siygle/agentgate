@@ -4,31 +4,62 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Plan - AgentGate</title>
+  <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/style.css">
-  <link rel="stylesheet" href="/static/vendor/highlight-github.min.css">
-  <link rel="stylesheet" href="/static/vendor/highlight-github-dark.min.css" media="(prefers-color-scheme: dark)">
 </head>
 <body>
   <div id="app"></div>
 
-  <script src="/static/vendor/highlight.min.js"></script>
-  <script src="/static/vendor/marked.min.js"></script>
-  <!-- Vendored, not CDN: this page holds the decryption key and the remembered
-       passphrase, so third-party JS here could read them. See vendor/VERSIONS.md. -->
-  <script src="/static/vendor/mermaid.min.js"></script>
+  <!--
+    Shell for /plan and /d. This page decrypts the share and then does nothing with the
+    content: markdown, MDX, mermaid, and wireframes are all rendered by
+    /static/renderers/doc/ inside an opaque-origin iframe with connect-src 'none'.
+
+    That is the point of the split. This origin holds the decryption key, the remembered
+    passphrase, and possibly an admin session cookie, so it does not load marked,
+    highlight.js, mermaid, or React at all — the renderer does, from vendored copies
+    inlined into the frame.
+  -->
   <script src="/static/js/crypto.js"></script>
   <script src="/static/js/share-loader.js"></script>
   <script src="/static/js/passphrase.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/export.js"></script>
-  <script src="/static/js/markdown.js"></script>
-  <script>
-    window.AgentGateMDXRuntimeReady = new Promise(function (resolve) {
-      window.AgentGateMDXRuntimeResolve = resolve;
-    });
-  </script>
-  <script type="module" src="/static/js/mdx-runtime.js"></script>
   <script src="/static/js/expiry-controls.js"></script>
-  <script src="/static/js/plan-viewer.js"></script>
+  <script src="/static/js/sandbox.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script>
+    (function () {
+      // Both /plan and /d use this shell; the decrypted payload's `kind` decides the
+      // labelling and whether review notes appear.
+      window.AgentGateShell.start(function (data) {
+        var files = data.files || [];
+        var kind = data.kind || "";
+        var isVisualPlan = kind === "visual-plan" || kind === "visual-recap";
+        var title =
+          data.title ||
+          (data.entry || "").replace(/\.[^.]+$/, "") ||
+          (isVisualPlan ? "Visual plan" : "Documents");
+        // MDX pulls in a 584 KB React bundle and needs 'unsafe-eval' in the frame's CSP,
+        // so it is enabled only when the bundle actually contains an .mdx file.
+        var hasMdx =
+          !!data.plan_mdx ||
+          /\.mdx$/i.test(data.entry || "") ||
+          files.some(function (f) {
+            return /\.mdx$/i.test(f.title || "");
+          });
+
+        return {
+          renderer: "doc",
+          label: (isVisualPlan ? "visual plan" : "documents") + " — " + title,
+          title: title,
+          features: { mdx: hasMdx },
+          allowEval: hasMdx,
+          feedback: isVisualPlan,
+          exportKind: isVisualPlan ? "plan" : "docs",
+        };
+      });
+    })();
+  </script>
 </body>
 </html>
