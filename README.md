@@ -134,25 +134,39 @@ TTL:
 After upload, return the public Preview/Docs/Plan/App URL to the user. Do not expose the passphrase in chat; share it out-of-band if needed.
 ```
 
-### Built-in TradingView Lightweight Charts for webapps
+### Built-in libraries for webapps
 
-AgentGate webapps run in an offline sandbox. To avoid bundling a large charting
-library into every encrypted upload, the app viewer provides a built-in vendored
-copy of TradingView Lightweight Charts. Reference it from your uploaded
-`index.html` with either alias below; AgentGate will inline it into the sandboxed
-iframe before rendering:
+AgentGate webapps run in a sandboxed iframe with `connect-src 'none'` — the framed app
+**cannot make any network request**, so every library it uses has to be present locally.
+Instead of bundling megabytes into each encrypted upload, reference a built-in library
+with an `agentgate:` URL. The app viewer inlines the server's own vendored copy into the
+sandbox before rendering, so it costs nothing in the payload.
+
+| Reference | Global | Library |
+|-----------|--------|---------|
+| `agentgate:marked` | `marked` | Markdown rendering |
+| `agentgate:highlight` | `hljs` | Syntax highlighting |
+| `agentgate:mermaid` | `mermaid` | Diagrams (flowchart, sequence, ER, …) |
+| `agentgate:diff2html` | `Diff2Html` | Unified-diff rendering |
+| `agentgate:lightweight-charts` | `LightweightCharts` | TradingView financial charts |
+
+Stylesheets work the same way through `<link rel="stylesheet">`:
+
+| Reference | Pairs with |
+|-----------|-----------|
+| `agentgate:highlight-css` | `agentgate:highlight` (light theme) |
+| `agentgate:highlight-dark-css` | `agentgate:highlight` (dark theme) |
+| `agentgate:diff2html-css` | `agentgate:diff2html` |
 
 ```html
+<link rel="stylesheet" href="agentgate:highlight-css">
+<script src="agentgate:marked"></script>
+<script src="agentgate:highlight"></script>
 <script src="agentgate:lightweight-charts"></script>
-<!-- or -->
-<script src="agentgate://vendor/lightweight-charts.js"></script>
-```
 
-Then use the normal global API inside the webapp:
-
-```html
 <div id="chart" style="height: 420px"></div>
 <script>
+  document.body.insertAdjacentHTML("afterbegin", marked.parse("# Report"));
   const chart = LightweightCharts.createChart(document.getElementById("chart"));
   const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {});
   candles.setData([
@@ -162,8 +176,22 @@ Then use the normal global API inside the webapp:
 </script>
 ```
 
-This keeps financial-chart reports smaller and avoids the layout issues caused by
-hand-drawn SVG charts on mobile.
+Each reference also accepts the longer spellings `agentgate://vendor/<name>.js` and
+`/static/vendor/<real-filename>`. Anything not listed above is left alone: a
+bundle-local path resolves from your uploaded files, and a remote URL stays remote —
+which means the sandbox blocks it.
+
+A ready-to-upload starting point lives in [`docs/webapp-template/`](docs/webapp-template/)
+(markdown + diagram + chart, no network):
+
+```bash
+agentgate webapp ./docs/webapp-template
+```
+
+The vendored files and their pinned versions are listed in
+[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md). They are committed
+rather than loaded from a CDN because the viewer page holds the decryption key and the
+remembered passphrase — third-party JS on that origin could read both.
 
 For pi, one possible location is `~/.pi/agent/skills/agentgate-share/SKILL.md`. Other agents can use the same text as a tool instruction or custom skill.
 
@@ -515,10 +543,11 @@ internal/db/       SQLite database layer
 internal/crypto/   AES-256-GCM encryption (CLI)
 internal/id/       ID generation
 internal/cleanup/  Expired content cleanup (goroutine)
-web/static/        Shared frontend: CSS, JS, vendor libs, static view shells (views/)
+web/static/        Shared frontend: CSS, JS, vendor libs (see vendor/VERSIONS.md), view shells
 worker/            Cloudflare Worker (TypeScript + Hono, D1 + R2)
 test/contract/     HTTP contract test run against both backends
 docs/api-contract.md  Shared API contract (single source of truth)
+docs/webapp-template/ Ready-to-upload starting point for `agentgate webapp`
 ```
 
 ## Prebuilt binaries

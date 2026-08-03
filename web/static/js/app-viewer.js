@@ -100,19 +100,52 @@
     });
   }
 
-  var BUILTIN_ASSETS = {
-    "agentgate:lightweight-charts": "/static/vendor/lightweight-charts.standalone.production.js",
-    "agentgate://vendor/lightweight-charts.js": "/static/vendor/lightweight-charts.standalone.production.js",
-    "agentgate://vendor/lightweight-charts.standalone.production.js":
-      "/static/vendor/lightweight-charts.standalone.production.js",
-    "/static/vendor/lightweight-charts.standalone.production.js":
-      "/static/vendor/lightweight-charts.standalone.production.js",
+  // BUILTIN_LIBS maps a short builtin name to a library vendored on the server.
+  // Referencing one of these from an uploaded webapp keeps the library out of the
+  // encrypted payload: it is inlined from /static/vendor at render time instead, so
+  // bundles stay small enough for the D1-only storage ceiling. The sandbox has
+  // connect-src 'none', so inlining is the only way a framed app can use a library
+  // at all. See web/static/vendor/VERSIONS.md.
+  var BUILTIN_LIBS = {
+    "lightweight-charts": { file: "lightweight-charts.standalone.production.js", type: "js" },
+    marked: { file: "marked.min.js", type: "js" },
+    highlight: { file: "highlight.min.js", type: "js" },
+    mermaid: { file: "mermaid.min.js", type: "js" },
+    diff2html: { file: "diff2html.min.js", type: "js" },
+    "highlight-css": { file: "highlight-github.min.css", type: "css" },
+    "highlight-dark-css": { file: "highlight-github-dark.min.css", type: "css" },
+    "diff2html-css": { file: "diff2html.min.css", type: "css" },
   };
+
+  // buildBuiltinIndex expands each library into every spelling we accept, so all of
+  // these resolve to the same vendored file:
+  //   agentgate:mermaid
+  //   agentgate://vendor/mermaid.js          (short name + type extension)
+  //   agentgate://vendor/mermaid.min.js      (real filename)
+  //   /static/vendor/mermaid.min.js          (server-relative path)
+  function buildBuiltinIndex() {
+    var index = {};
+    Object.keys(BUILTIN_LIBS).forEach(function (name) {
+      var lib = BUILTIN_LIBS[name];
+      var entry = { url: "/static/vendor/" + lib.file, type: lib.type };
+      index["agentgate:" + name] = entry;
+      index["agentgate://vendor/" + name + "." + lib.type] = entry;
+      index["agentgate://vendor/" + lib.file] = entry;
+      index["/static/vendor/" + lib.file] = entry;
+    });
+    return index;
+  }
+
+  var BUILTIN_ASSETS = buildBuiltinIndex();
   var builtinCache = {};
 
-  function builtinAssetURL(ref) {
+  // builtinAsset resolves a reference to a vendored library, or null. `want` is
+  // "js" or "css": a <script src> must not pull in a stylesheet and vice versa.
+  function builtinAsset(ref, want) {
     if (!ref) return null;
-    return BUILTIN_ASSETS[ref.replace(/[?#].*$/, "")] || null;
+    var entry = BUILTIN_ASSETS[ref.replace(/[?#].*$/, "")];
+    if (!entry || entry.type !== want) return null;
+    return entry;
   }
 
   function fetchBuiltinText(url) {
@@ -125,8 +158,20 @@
     return builtinCache[url];
   }
 
+  // The capture group preserves the original casing: the escape must neutralise the
+  // tag without editing the content it is protecting (a JS string that happens to hold
+  // "</SCRIPT>" should still read "</SCRIPT>" after the frame parses it).
   function escapeScriptText(text) {
-    return String(text || "").replace(/<\/script/gi, "<\\/script");
+    return String(text || "").replace(/<\/(script)/gi, "<\\/$1");
+  }
+
+  // escapeStyleText keeps an inlined stylesheet from closing its own <style> element
+  // when the document is serialized (the HTML serializer writes <style> content as raw
+  // text). "</style" is only meaningful inside a CSS string or comment, where "\/" is a
+  // valid escape; anywhere else the sequence was already broken CSS. This is a
+  // correctness guard, not a security one — the framed app is trusted by itself.
+  function escapeStyleText(text) {
+    return String(text || "").replace(/<\/(style)/gi, "<\\/$1");
   }
 
   function assemble(files) {
@@ -159,21 +204,41 @@
       doc.documentElement.insertBefore(csp, doc.documentElement.firstChild);
     }
 
+    // builtinPromises collects the fetches for vendored libraries referenced via an
+    // agentgate: alias. Bundle-local assets resolve synchronously from `map`; builtins
+    // come off the server, so assembly awaits them before serializing.
+    var builtinPromises = [];
+
     var links = doc.querySelectorAll('link[rel~="stylesheet"][href]');
     Array.prototype.forEach.call(links, function (link) {
-      var css = lookup(map, link.getAttribute("href"));
-      if (css == null) return;
-      var style = doc.createElement("style");
-      style.textContent = inlineCSSUrls(css.content, map);
-      link.parentNode.replaceChild(style, link);
+      var href = link.getAttribute("href");
+      var css = lookup(map, href);
+      if (css != null) {
+        var style = doc.createElement("style");
+        style.textContent = escapeStyleText(inlineCSSUrls(css.content, map));
+        link.parentNode.replaceChild(style, link);
+        return;
+      }
+
+      var builtinCSS = builtinAsset(href, "css");
+      if (!builtinCSS) return;
+      builtinPromises.push(
+        fetchBuiltinText(builtinCSS.url).then(function (content) {
+          if (!link.parentNode) return;
+          var builtinStyle = doc.createElement("style");
+          // A vendored stylesheet cannot reference bundle assets, so no url() rewrite.
+          builtinStyle.setAttribute("data-agentgate-builtin", href);
+          builtinStyle.textContent = escapeStyleText(content);
+          link.parentNode.replaceChild(builtinStyle, link);
+        })
+      );
     });
 
     var inlineStyles = doc.querySelectorAll("style");
     Array.prototype.forEach.call(inlineStyles, function (style) {
-      style.textContent = inlineCSSUrls(style.textContent || "", map);
+      style.textContent = escapeStyleText(inlineCSSUrls(style.textContent || "", map));
     });
 
-    var builtinPromises = [];
     var scripts = doc.querySelectorAll("script[src]");
     Array.prototype.forEach.call(scripts, function (script) {
       var src = script.getAttribute("src");
@@ -182,15 +247,15 @@
         var inline = doc.createElement("script");
         var type = script.getAttribute("type");
         if (type) inline.setAttribute("type", type);
-        inline.textContent = js.content;
+        inline.textContent = escapeScriptText(js.content);
         script.parentNode.replaceChild(inline, script);
         return;
       }
 
-      var builtinURL = builtinAssetURL(src);
-      if (!builtinURL) return;
+      var builtinJS = builtinAsset(src, "js");
+      if (!builtinJS) return;
       builtinPromises.push(
-        fetchBuiltinText(builtinURL).then(function (content) {
+        fetchBuiltinText(builtinJS.url).then(function (content) {
           if (!script.parentNode) return;
           var inlineBuiltin = doc.createElement("script");
           var type = script.getAttribute("type");
@@ -442,5 +507,12 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
-  window.AgentGateApp = { assemble: assemble };
+  window.AgentGateApp = {
+    assemble: assemble,
+    // builtinLibs / resolveBuiltin are exposed so the landing page and tests can
+    // enumerate and check the agentgate: aliases available to uploaded webapps
+    // without duplicating the list.
+    builtinLibs: BUILTIN_LIBS,
+    resolveBuiltin: builtinAsset,
+  };
 })();

@@ -115,15 +115,50 @@ Create an encrypted file bundle. Same request/response format as POST /api/diff.
 
 ## Built-in webapp assets
 
-AgentGate webapps run in an offline sandbox. For financial charts, include the built-in TradingView Lightweight Charts script instead of bundling it in every upload:
+AgentGate webapps run in a sandboxed iframe with ` + "`connect-src 'none'`" + `: the framed app
+**cannot make any network request**, so every library it uses must be present locally. Rather
+than bundling megabytes into each encrypted upload, reference a built-in library with an
+` + "`agentgate:`" + ` URL. The app viewer inlines the vendored copy from the server into the
+sandbox before rendering, so it costs nothing in the payload.
+
+| Reference | Global it defines | Library |
+|-----------|-------------------|---------|
+| ` + "`agentgate:marked`" + ` | ` + "`marked`" + ` | Markdown rendering |
+| ` + "`agentgate:highlight`" + ` | ` + "`hljs`" + ` | Syntax highlighting |
+| ` + "`agentgate:mermaid`" + ` | ` + "`mermaid`" + ` | Diagrams (flowcharts, sequence, ER, …) |
+| ` + "`agentgate:diff2html`" + ` | ` + "`Diff2Html`" + ` | Unified-diff rendering |
+| ` + "`agentgate:lightweight-charts`" + ` | ` + "`LightweightCharts`" + ` | TradingView financial charts |
+
+Stylesheets use the same mechanism via ` + "`<link rel=\"stylesheet\">`" + `:
+
+| Reference | Pairs with |
+|-----------|-----------|
+| ` + "`agentgate:highlight-css`" + ` | ` + "`agentgate:highlight`" + ` (light theme) |
+| ` + "`agentgate:highlight-dark-css`" + ` | ` + "`agentgate:highlight`" + ` (dark theme) |
+| ` + "`agentgate:diff2html-css`" + ` | ` + "`agentgate:diff2html`" + ` |
+
+Example ` + "`index.html`" + ` using several at once:
 
 ` + "```" + `html
-<script src="agentgate:lightweight-charts"></script>
-<!-- or -->
-<script src="agentgate://vendor/lightweight-charts.js"></script>
+<link rel="stylesheet" href="agentgate:highlight-css">
+<script src="agentgate:marked"></script>
+<script src="agentgate:highlight"></script>
+<script src="agentgate:mermaid"></script>
+
+<div id="out"></div>
+<script>
+  document.getElementById("out").innerHTML = marked.parse("# Report\n\nSome **text**.");
+  document.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
+  mermaid.initialize({ startOnLoad: true });
+</script>
 ` + "```" + `
 
-The app viewer inlines the vendored script into the sandboxed iframe before rendering, exposing the normal ` + "`LightweightCharts`" + ` global.
+Each reference also accepts the longer spellings ` + "`agentgate://vendor/<name>.js`" + ` and
+` + "`/static/vendor/<real-filename>`" + `. Anything not in the tables above is left untouched:
+a bundle-local path resolves from the uploaded files, and a remote URL stays remote — which
+means the sandbox will block it.
+
+Use ` + "`agentgate webapp <dir>`" + ` to upload. The directory must contain ` + "`index.html`" + ` at its root.
 
 ## Encryption Details
 

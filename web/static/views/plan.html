@@ -13,7 +13,9 @@
 
   <script src="/static/vendor/highlight.min.js"></script>
   <script src="/static/vendor/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <!-- Vendored, not CDN: this page holds the decryption key and the remembered
+       passphrase, so third-party JS here could read them. See vendor/VERSIONS.md. -->
+  <script src="/static/vendor/mermaid.min.js"></script>
   <script src="/static/js/crypto.js"></script>
   <script src="/static/js/share-loader.js"></script>
   <script src="/static/js/passphrase.js"></script>
