@@ -18,6 +18,7 @@ import {
 } from "./store";
 import { llmsTxt, llmsFullTxt } from "./llms";
 import adminApp from "./admin";
+import { SHARE_PATH, LEGACY_SHARE_PREFIXES } from "./routes";
 
 type Ctx = Context<{ Bindings: Env }>;
 
@@ -59,8 +60,42 @@ function tooLarge(c: Ctx, limit: number) {
 
 // servePage returns a static HTML shell (Plan B). The shell's client JS fetches
 // GET /api/{kind}/{id}, so view routes always return 200 for an existing shell.
-async function servePage(c: Ctx, assetPath: string): Promise<Response> {
-  const headers = { "content-type": "text/html; charset=utf-8" };
+// Host-page CSP. Share content no longer runs here — it renders in an opaque-origin
+// iframe assembled by sandbox.js. Mirrors buildPageCSP in internal/server/handlers_pages.go;
+// see the comment there for why each directive is what it is.
+function buildPageCSP(scriptSrc: string): string {
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    // 'unsafe-inline' covers the element.style writes the chrome makes.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    // The render sandbox is a srcdoc iframe; "open standalone" uses a blob: URL.
+    "frame-src blob: data:",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+// Strict, for every page that does NOT embed the render sandbox — the landing page and
+// the admin dashboard. Neither carries an inline script.
+const PAGE_CSP = buildPageCSP("'self'");
+
+// Weaker, and only for the share shell: a srcdoc iframe inherits its parent's CSP and
+// the effective policy is the intersection, so the host must permit what the sandbox
+// needs — inline scripts always, plus 'unsafe-eval' for MDX compilation.
+const SHARE_PAGE_CSP = buildPageCSP("'self' 'unsafe-inline' 'unsafe-eval'");
+
+async function servePage(c: Ctx, assetPath: string, csp: string = PAGE_CSP): Promise<Response> {
+  const headers = {
+    "content-type": "text/html; charset=utf-8",
+    "content-security-policy": csp,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+  };
   if (c.req.method === "HEAD") {
     return new Response(null, { status: 200, headers });
   }
@@ -73,11 +108,13 @@ async function servePage(c: Ctx, assetPath: string): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 app.on(["GET", "HEAD"], "/", (c) => servePage(c, "/index.html"));
-app.on(["GET", "HEAD"], "/p/:id", (c) => servePage(c, "/views/diff.html"));
-app.on(["GET", "HEAD"], "/f/:id", (c) => servePage(c, "/views/files.html"));
-app.on(["GET", "HEAD"], "/app/:id", (c) => servePage(c, "/views/app.html"));
-app.on(["GET", "HEAD"], "/plan/:id", (c) => servePage(c, "/views/plan.html"));
-app.on(["GET", "HEAD"], "/d/:id", (c) => servePage(c, "/views/plan.html"));
+
+// /s/:id is the route new shares use; the five kind-specific prefixes are permanent
+// aliases, because a --no-expiry link handed out long ago must keep resolving. All six
+// serve the same shell, which picks a renderer from the decrypted payload.
+for (const prefix of ["/s", ...LEGACY_SHARE_PREFIXES]) {
+  app.on(["GET", "HEAD"], `${prefix}/:id`, (c) => servePage(c, "/views/share.html", SHARE_PAGE_CSP));
+}
 
 app.get("/llms.txt", (c) =>
   c.text(llmsTxt(c.env.BASE_URL), 200, { "content-type": "text/plain; charset=utf-8" }),
@@ -136,7 +173,7 @@ async function handleCreate(c: Ctx, kind: Kind): Promise<Response> {
     return fail(c, "internal server error", 500);
   }
 
-  const previewURL = c.env.BASE_URL + (kind === "diff" ? "/p/" : "/f/") + id;
+  const previewURL = c.env.BASE_URL + SHARE_PATH + id;
   return ok(
     c,
     {
@@ -173,6 +210,28 @@ async function handleGet(c: Ctx, kind: Kind): Promise<Response> {
 
 app.get("/api/diff/:id", (c) => handleGet(c, "diff"));
 app.get("/api/files/:id", (c) => handleGet(c, "files"));
+
+// Kind-agnostic lookup, so the /s/:id shell can fetch without knowing which table the id
+// lives in. Diffs and file bundles have independently generated ids, so both are tried:
+// file bundles first, then diffs. A cross-table collision is possible in principle (6
+// characters over a 32-character alphabet) and would make /s/:id ambiguous — but /p/:id
+// and /f/:id are kept forever and stay unambiguous. See docs/api-contract.md.
+app.get("/api/share/:id", async (c) => {
+  const id = c.req.param("id") ?? "";
+  for (const kind of ["files", "diff"] as Kind[]) {
+    const rec = await getShare(c.env, kind, id);
+    if (!rec) continue;
+    const data: Record<string, unknown> = {
+      encrypted_data: rec.encrypted_data,
+      never_expires: rec.never_expires,
+      id: rec.id,
+      kind: rec.kind,
+    };
+    if (!rec.never_expires && rec.expires_at) data.expires_at = rec.expires_at;
+    return ok(c, data, 200);
+  }
+  return fail(c, "not found", 404);
+});
 
 // ---------------------------------------------------------------------------
 // API: patch (toggle never_expires)

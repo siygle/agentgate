@@ -28,16 +28,12 @@
     "Source Code Pro": "'Source Code Pro', ui-monospace, SFMono-Regular, monospace",
   };
 
-  var GOOGLE_FONT_URLS = {
-    "JetBrains Mono":
-      "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap",
-    "Fira Code":
-      "https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap",
-    "Source Code Pro":
-      "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&display=swap",
-  };
-
-  var loadedFonts = {};
+  // These used to be pulled from fonts.googleapis.com on demand. Two reasons they are
+  // not any more: this page holds the decryption key and the remembered passphrase, so
+  // a third-party request from it is worth avoiding; and share content now renders in a
+  // sandbox with `font-src data:`, where a webfont URL cannot load at all. The stacks
+  // above therefore apply only when the font is installed locally, and fall back to the
+  // system monospace otherwise — which is why the panel says so.
 
   function loadSettings() {
     try {
@@ -94,20 +90,9 @@
     document.documentElement.style.setProperty("--content-font-size", contentValue);
   }
 
-  function loadGoogleFont(name) {
-    var url = GOOGLE_FONT_URLS[name];
-    if (!url || loadedFonts[name]) return;
-    var link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = url;
-    document.head.appendChild(link);
-    loadedFonts[name] = true;
-  }
-
   function applyFontFamily(family) {
     var value = FONT_FAMILIES[family];
     if (value) {
-      loadGoogleFont(family);
       document.documentElement.style.setProperty("--code-font-family", value);
       document.documentElement.style.setProperty("--content-font-family", value);
     } else {
@@ -120,6 +105,43 @@
     applyTheme(settings.theme);
     applyFontSize(settings.fontSize);
     applyFontFamily(settings.fontFamily);
+  }
+
+  // --- sharing settings with the render sandbox --------------------------------------
+
+  // Share content renders inside an iframe, which cannot read this page's DOM or
+  // localStorage. describe() reduces the settings to the theme plus the CSS custom
+  // properties tokens.css/renderer.css actually read, so the host can post them across
+  // and the frame can apply them without knowing anything about this module.
+  function describe(settings) {
+    var s = settings || loadSettings();
+    var family = FONT_FAMILIES[s.fontFamily] || "";
+    return {
+      theme: s.theme,
+      vars: {
+        "--code-font-size": CODE_FONT_SIZES[s.fontSize] || CODE_FONT_SIZES.medium,
+        "--content-font-size": CONTENT_FONT_SIZES[s.fontSize] || CONTENT_FONT_SIZES.medium,
+        "--code-font-family": family,
+        "--content-font-family": family,
+      },
+    };
+  }
+
+  var listeners = [];
+
+  function onChange(fn) {
+    if (typeof fn === "function") listeners.push(fn);
+  }
+
+  function notify(settings) {
+    var described = describe(settings);
+    listeners.forEach(function (fn) {
+      try {
+        fn(described);
+      } catch (e) {
+        console.error("settings listener failed", e);
+      }
+    });
   }
 
   function gearSvg() {
@@ -184,6 +206,7 @@
           settings.theme = value;
           saveSettings(settings);
           applyTheme(value);
+          notify(settings);
         }
       )
     );
@@ -208,6 +231,7 @@
           settings.fontSize = value;
           saveSettings(settings);
           applyFontSize(value);
+          notify(settings);
         }
       )
     );
@@ -233,9 +257,14 @@
           settings.fontFamily = value;
           saveSettings(settings);
           applyFontFamily(value);
+          notify(settings);
         }
       )
     );
+    var familyHint = document.createElement("p");
+    familyHint.className = "settings-hint";
+    familyHint.textContent = "Applies if the font is installed on this device.";
+    familySection.appendChild(familyHint);
     panel.appendChild(familySection);
 
     trigger.appendChild(panel);
@@ -262,5 +291,9 @@
   window.AgentGateSettings = {
     init: init,
     renderSettingsPanel: renderSettingsPanel,
+    // describe/onChange let the host forward display settings into the render sandbox,
+    // which has no access to this page's DOM or localStorage.
+    describe: describe,
+    onChange: onChange,
   };
 })();

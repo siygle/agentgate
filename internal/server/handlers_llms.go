@@ -32,7 +32,7 @@ AgentGate encrypts code diffs and files client-side before uploading. The server
 ## API
 
 - [POST /api/diff](%s/llms-full.txt): Create an encrypted diff — send JSON with encrypted_data containing ciphertext, iv, and salt
-- [POST /api/files](%s/llms-full.txt): Create an encrypted file bundle — same format, preview URL uses /f/ prefix
+- [POST /api/files](%s/llms-full.txt): Create an encrypted file bundle — same format; every share previews at /s/<id>
 
 ## Optional
 
@@ -103,7 +103,7 @@ Response (201 Created):
 {
   "success": true,
   "data": {
-    "preview_url": "%s/p/<id>",
+    "preview_url": "%s/s/<id>",
     "id": "<id>"
   }
 }
@@ -111,19 +111,85 @@ Response (201 Created):
 
 ### POST /api/files
 
-Create an encrypted file bundle. Same request/response format as POST /api/diff. The preview URL uses ` + "`/f/<id>`" + ` instead of ` + "`/p/<id>`" + `.
+Create an encrypted file bundle. Same request/response format as POST /api/diff.
+
+### Share URLs
+
+Every share previews at ` + "`/s/<id>`" + ` regardless of kind — the viewer picks how to render
+it from the decrypted payload. The older kind-specific links (` + "`/p/`" + `, ` + "`/f/`" + `, ` + "`/app/`" + `,
+` + "`/plan/`" + `, ` + "`/d/`" + `) still resolve and always will, so any URL previously handed out keeps
+working; they are simply no longer issued.
+
+### GET /api/share/<id>
+
+Resolves a share without knowing its kind (this is what ` + "`/s/<id>`" + ` uses). Same response as
+GET /api/diff/<id> or GET /api/files/<id>, including the ` + "`kind`" + ` field.
 
 ## Built-in webapp assets
 
-AgentGate webapps run in an offline sandbox. For financial charts, include the built-in TradingView Lightweight Charts script instead of bundling it in every upload:
+AgentGate webapps run in a sandboxed iframe with ` + "`connect-src 'none'`" + `: the framed app
+**cannot make any network request**, so every library it uses must be present locally. Rather
+than bundling megabytes into each encrypted upload, reference a built-in library with an
+` + "`agentgate:`" + ` URL. The app viewer inlines the vendored copy from the server into the
+sandbox before rendering, so it costs nothing in the payload.
+
+| Reference | Global it defines | Library |
+|-----------|-------------------|---------|
+| ` + "`agentgate:marked`" + ` | ` + "`marked`" + ` | Markdown rendering |
+| ` + "`agentgate:highlight`" + ` | ` + "`hljs`" + ` | Syntax highlighting |
+| ` + "`agentgate:mermaid`" + ` | ` + "`mermaid`" + ` | Diagrams (flowcharts, sequence, ER, …) |
+| ` + "`agentgate:diff2html`" + ` | ` + "`Diff2Html`" + ` | Unified-diff rendering |
+| ` + "`agentgate:lightweight-charts`" + ` | ` + "`LightweightCharts`" + ` | TradingView financial charts |
+
+Stylesheets use the same mechanism via ` + "`<link rel=\"stylesheet\">`" + `:
+
+| Reference | Pairs with |
+|-----------|-----------|
+| ` + "`agentgate:highlight-css`" + ` | ` + "`agentgate:highlight`" + ` (light theme) |
+| ` + "`agentgate:highlight-dark-css`" + ` | ` + "`agentgate:highlight`" + ` (dark theme) |
+| ` + "`agentgate:diff2html-css`" + ` | ` + "`agentgate:diff2html`" + ` |
+| ` + "`agentgate:tokens`" + ` | AgentGate's design tokens (colours, fonts, light/dark) |
+| ` + "`agentgate:renderer`" + ` | AgentGate's content styles (` + "`.markdown-body`" + `, tables, code blocks) |
+
+Link ` + "`agentgate:tokens`" + ` and ` + "`agentgate:renderer`" + ` if you want the webapp to look like the
+rest of AgentGate; skip them and style it yourself otherwise.
+
+Example ` + "`index.html`" + ` using several at once:
 
 ` + "```" + `html
-<script src="agentgate:lightweight-charts"></script>
-<!-- or -->
-<script src="agentgate://vendor/lightweight-charts.js"></script>
+<link rel="stylesheet" href="agentgate:highlight-css">
+<script src="agentgate:marked"></script>
+<script src="agentgate:highlight"></script>
+<script src="agentgate:mermaid"></script>
+
+<div id="out"></div>
+<script>
+  document.getElementById("out").innerHTML = marked.parse("# Report\n\nSome **text**.");
+  document.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
+  mermaid.initialize({ startOnLoad: true });
+</script>
 ` + "```" + `
 
-The app viewer inlines the vendored script into the sandboxed iframe before rendering, exposing the normal ` + "`LightweightCharts`" + ` global.
+Each reference also accepts the longer spellings ` + "`agentgate://vendor/<name>.js`" + ` and
+` + "`/static/vendor/<real-filename>`" + `. Anything not in the tables above is left untouched:
+a bundle-local path resolves from the uploaded files, and a remote URL stays remote — which
+means the sandbox will block it.
+
+### Only inline what the webapp uses
+
+A built-in is inlined into the frame on every view, so a large one costs the reader time
+each time (mermaid is 3.3 MB). Add ` + "`data-agentgate-when=\"<global>\"`" + ` and the library is
+dropped unless something else in the bundle mentions that global by name:
+
+` + "```" + `html
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+` + "```" + `
+
+Opt-in: without the attribute the library is always inlined, so nothing you asked for
+unconditionally is removed. Mentions inside HTML comments do not count. Prefer adding the
+attribute to every heavy built-in you reference.
+
+Use ` + "`agentgate webapp <dir>`" + ` to upload. The directory must contain ` + "`index.html`" + ` at its root.
 
 ## Encryption Details
 

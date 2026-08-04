@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<!--
+  AgentGate webapp template.
+
+  Upload with:  agentgate webapp ./docs/webapp-template
+
+  This is a starting point for the `webapp` share type: a self-contained static page
+  that AgentGate encrypts, then runs inside a sandboxed iframe on the viewer's machine.
+
+  Two constraints shape everything below:
+
+  1. NO NETWORK. The sandbox enforces `default-src 'none'; connect-src 'none'`, so
+     fetch/XHR/WebSocket and any external script, stylesheet, font, or image will be
+     blocked. Everything must be inline or come from an `agentgate:` built-in.
+  2. NO STORAGE. The frame runs in an opaque origin, so localStorage and cookies are
+     unavailable. Keep state in memory.
+
+  The `agentgate:` references below are inlined from the server's own vendored copies at
+  render time, so they cost nothing in the encrypted payload. Available built-ins:
+
+    agentgate:marked              -> marked            (Markdown)
+    agentgate:highlight           -> hljs              (syntax highlighting)
+    agentgate:mermaid             -> mermaid           (diagrams)
+    agentgate:diff2html           -> Diff2Html         (unified diffs)
+    agentgate:lightweight-charts  -> LightweightCharts (financial charts)
+
+    agentgate:highlight-css       (light theme, pairs with agentgate:highlight)
+    agentgate:highlight-dark-css  (dark theme)
+    agentgate:diff2html-css       (pairs with agentgate:diff2html)
+
+  Delete the sections you do not need. Two separate costs are worth deleting for: bytes in
+  the encrypted upload (the CLI warns past a ~1 MB soft budget), and the built-in libraries
+  inlined at view time — the `data-agentgate-when` attributes near the bottom mean a
+  section you remove stops pulling its library in as well.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGate webapp template</title>
+
+<link rel="stylesheet" href="agentgate:highlight-css">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)">
+
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6b66;
+    --line: #e4e4e0;
+    --accent: #7c5cff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121211;
+      --panel: #1a1a19;
+      --ink: #eceae4;
+      --muted: #9a9a92;
+      --line: #2c2c2a;
+      --accent: #a48cff;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+
+  header { margin-bottom: 2.5rem; }
+  h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1.6rem;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+  }
+  .lede { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+  section {
+    margin-top: 2rem;
+    padding: 1.4rem 1.5rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  h2 {
+    margin: 0 0 1rem;
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .prose > :first-child { margin-top: 0; }
+  .prose > :last-child { margin-bottom: 0; }
+  .prose h3 { font-size: 1.05rem; margin: 1.4rem 0 0.5rem; }
+  .prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.92rem; }
+  .prose th, .prose td { padding: 0.45rem 0.7rem; border: 1px solid var(--line); text-align: left; }
+  .prose th { background: var(--bg); font-weight: 600; }
+  .prose code {
+    padding: 0.12em 0.36em;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
+  .prose pre {
+    margin: 1rem 0;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .prose pre code { padding: 0; background: none; border: 0; }
+  .prose blockquote {
+    margin: 1rem 0;
+    padding: 0.1rem 0 0.1rem 1rem;
+    border-left: 3px solid var(--accent);
+    color: var(--muted);
+  }
+
+  .mermaid { display: flex; justify-content: center; }
+  .chart { height: 300px; }
+
+  .empty { margin: 0; color: var(--muted); font-size: 0.9rem; font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Webapp template</h1>
+    <p class="lede">Markdown, diagrams, and charts with nothing fetched over the network.</p>
+  </header>
+
+  <!-- 1. Markdown + syntax highlighting -------------------------------------- -->
+  <section>
+    <h2>Markdown</h2>
+    <div class="prose" id="prose"></div>
+  </section>
+
+  <!-- 2. Diagram --------------------------------------------------------------- -->
+  <section>
+    <h2>Diagram</h2>
+    <div class="mermaid" id="diagram">
+flowchart LR
+  A[Agent] -->|encrypt locally| B(AgentGate)
+  B --> C{{Sandboxed iframe}}
+  C --> D[Reader]
+    </div>
+  </section>
+
+  <!-- 3. Chart ----------------------------------------------------------------- -->
+  <section>
+    <h2>Chart</h2>
+    <div class="chart" id="chart"></div>
+  </section>
+</main>
+
+<!--
+  data-agentgate-when="X" drops the library unless something else in this bundle mentions
+  X by name. It is opt-in: leave the attribute off and the library is always inlined.
+
+  Use it on anything heavy. mermaid is 3.3 MB, so a copy of this template with the diagram
+  section deleted would otherwise still pay for it on every view.
+-->
+<script src="agentgate:marked" data-agentgate-when="marked"></script>
+<script src="agentgate:highlight" data-agentgate-when="hljs"></script>
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+<script src="agentgate:lightweight-charts" data-agentgate-when="LightweightCharts"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  // Put your content here. Keeping it as one Markdown string is usually the easiest
+  // way for an agent to fill this template in.
+  var CONTENT = [
+    "Replace this with whatever you are reporting. Markdown works, including tables,",
+    "code, and blockquotes.",
+    "",
+    "### Findings",
+    "",
+    "| Area | Status | Note |",
+    "|------|--------|------|",
+    "| Parser | pass | no changes needed |",
+    "| Encoder | fail | drops the trailing newline |",
+    "",
+    "```js",
+    "// Highlighted by agentgate:highlight.",
+    "export function encode(input) {",
+    "  return input.replace(/\\r\\n/g, '\\n');",
+    "}",
+    "```",
+    "",
+    "> Nothing here reaches the network — the sandbox blocks it by design.",
+  ].join("\n");
+
+  // --- Markdown -------------------------------------------------------------
+  var prose = document.getElementById("prose");
+  if (typeof marked !== "undefined") {
+    prose.innerHTML = marked.parse(CONTENT);
+    if (typeof hljs !== "undefined") {
+      prose.querySelectorAll("pre code").forEach(function (el) {
+        hljs.highlightElement(el);
+      });
+    }
+  } else {
+    prose.innerHTML = '<p class="empty">marked did not load.</p>';
+  }
+
+  // --- Diagram --------------------------------------------------------------
+  // startOnLoad is off and run() called explicitly: the built-in scripts are inlined
+  // into the document, so relying on load-order side effects is fragile.
+  var diagram = document.getElementById("diagram");
+  if (typeof mermaid !== "undefined") {
+    var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
+    mermaid.run({ nodes: [diagram] }).catch(function (err) {
+      diagram.innerHTML = '<p class="empty">Diagram failed to render: ' + err + "</p>";
+    });
+  } else {
+    diagram.textContent = "";
+    diagram.innerHTML = '<p class="empty">mermaid did not load.</p>';
+  }
+
+  // --- Chart ----------------------------------------------------------------
+  var chartEl = document.getElementById("chart");
+  if (typeof LightweightCharts !== "undefined") {
+    var darkChart = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var chart = LightweightCharts.createChart(chartEl, {
+      height: chartEl.clientHeight,
+      layout: {
+        background: { color: "transparent" },
+        textColor: darkChart ? "#9a9a92" : "#6b6b66",
+      },
+      grid: {
+        vertLines: { color: darkChart ? "#2c2c2a" : "#e4e4e0" },
+        horzLines: { color: darkChart ? "#2c2c2a" : "#e4e4e0" },
+      },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false },
+    });
+    var series = chart.addSeries(LightweightCharts.AreaSeries, {
+      lineColor: "#7c5cff",
+      topColor: "rgba(124, 92, 255, 0.28)",
+      bottomColor: "rgba(124, 92, 255, 0.02)",
+      lineWidth: 2,
+    });
+    series.setData([
+      { time: "2026-07-27", value: 12 },
+      { time: "2026-07-28", value: 19 },
+      { time: "2026-07-29", value: 17 },
+      { time: "2026-07-30", value: 26 },
+      { time: "2026-07-31", value: 31 },
+      { time: "2026-08-01", value: 29 },
+      { time: "2026-08-02", value: 38 },
+    ]);
+    chart.timeScale().fitContent();
+    // The frame is resized by the host when the viewport changes; keep the chart in step.
+    window.addEventListener("resize", function () {
+      chart.applyOptions({ width: chartEl.clientWidth });
+    });
+  } else {
+    chartEl.innerHTML = '<p class="empty">LightweightCharts did not load.</p>';
+  }
+})();
+</script>
+</body>
+</html>

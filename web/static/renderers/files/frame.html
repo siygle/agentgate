@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!--
+  Built-in renderer: file bundles.
+
+  Runs inside AgentGate's render sandbox (see web/static/js/sandbox.js) — an
+  opaque-origin iframe with `default-src 'none'; connect-src 'none'`. sandbox.js inlines
+  every agentgate: reference from the server, resolves this renderer's scripts from
+  /static/renderers/, and injects the decrypted payload as inert JSON.
+
+  markdown.js is shared with the doc renderer rather than duplicated: a bundle containing
+  .md files gets the same Source/Preview treatment either way. It and `marked` are dropped
+  entirely when the bundle has no markdown in it — see data-agentgate-when below and
+  detectFeatures in web/static/js/share-kind.js.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGate files</title>
+
+<link rel="stylesheet" href="agentgate:tokens">
+<link rel="stylesheet" href="agentgate:renderer">
+<link rel="stylesheet" href="agentgate:highlight-css" data-agentgate-when="highlight">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)" data-agentgate-when="highlight">
+<link rel="stylesheet" href="/static/renderers/common/frame-ui.css">
+</head>
+<body class="ag-frame">
+<div class="ag-doc-toolbar" id="ag-toolbar" hidden>
+  <label class="ag-find">
+    <span class="ag-find-icon" aria-hidden="true">⌕</span>
+    <input type="search" id="ag-find-input" placeholder="Find in file" autocomplete="off" spellcheck="false">
+    <span class="ag-find-count" id="ag-find-count"></span>
+    <button type="button" id="ag-find-prev" class="ag-find-nav" title="Previous match" aria-label="Previous match">↑</button>
+    <button type="button" id="ag-find-next" class="ag-find-nav" title="Next match" aria-label="Next match">↓</button>
+  </label>
+</div>
+
+<div class="file-viewer">
+  <div class="file-viewer-body">
+    <nav class="file-sidebar desktop-only" id="ag-sidebar"></nav>
+    <div class="file-content desktop-only" id="ag-content"></div>
+    <div class="mobile-only" id="ag-accordion"></div>
+  </div>
+</div>
+
+<script src="agentgate:marked" data-agentgate-when="markdown"></script>
+<script src="agentgate:highlight" data-agentgate-when="highlight"></script>
+<script src="/static/renderers/common/frame-ui.js"></script>
+<script src="/static/renderers/doc/markdown.js" data-agentgate-when="markdown"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

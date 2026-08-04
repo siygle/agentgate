@@ -493,6 +493,9 @@ func parseShareRef(ref string) (id, kind, ownerToken, server string) {
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) >= 2 {
+		// /s/ says nothing about the kind (that is the point of it), so kind stays empty
+		// and callers fall back to the registry or ask for the exact URL. The older
+		// prefixes still name their kind and are kept forever.
 		switch parts[0] {
 		case "p":
 			kind = "diff"

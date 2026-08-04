@@ -9,6 +9,7 @@
 import { Hono, type Context, type Next } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "./bindings";
+import { SHARE_PATH } from "./routes";
 import { generateId } from "./id";
 import { generateOwnerToken, sha256Hex, constantTimeEqual } from "./owner";
 import {
@@ -311,7 +312,7 @@ admin.post("/:kind/:id/reshare", requireAdmin, async (c) => {
     return fail(c, "internal server error", 500);
   }
 
-  const previewURL = c.env.BASE_URL + (kind === "diff" ? "/p/" : "/f/") + newId;
+  const previewURL = c.env.BASE_URL + SHARE_PATH + newId;
   return ok(c, {
     preview_url: previewURL,
     manage_url: previewURL + "#owner=" + token,
@@ -392,7 +393,7 @@ admin.post("/:kind/:id/reset-reshare", requireAdmin, async (c) => {
   // Revoke the source (mirror the revoke handler: never_expires=0, expired_at=now).
   await setNeverExpires(c.env, kind, id, false, nowSeconds());
 
-  const previewURL = c.env.BASE_URL + (kind === "diff" ? "/p/" : "/f/") + newId;
+  const previewURL = c.env.BASE_URL + SHARE_PATH + newId;
   return ok(c, {
     preview_url: previewURL,
     manage_url: previewURL + "#owner=" + token,

@@ -485,20 +485,20 @@ func printCreateResponse(body []byte, server string, displayMode string) *create
 	}
 	previewURL := rebaseURL(parsed.Data.PreviewURL, server)
 	manageURL := rebaseURL(parsed.Data.ManageURL, server)
+	// Every kind now previews at the same /s/ route — the viewer picks a renderer from
+	// the decrypted payload — so the URL no longer needs rewriting per display mode. Only
+	// the printed label still differs, so the CLI output stays recognisable.
+	//
+	// Older servers still return kind-specific preview URLs (/f/, /p/). Those keep working
+	// as aliases, so they are printed unchanged rather than rewritten.
 	label := "Preview URL"
 	switch displayMode {
 	case "app":
 		label = "App URL"
-		previewURL = strings.Replace(previewURL, "/f/", "/app/", 1)
-		manageURL = strings.Replace(manageURL, "/f/", "/app/", 1)
 	case "plan":
 		label = "Plan URL"
-		previewURL = strings.Replace(previewURL, "/f/", "/plan/", 1)
-		manageURL = strings.Replace(manageURL, "/f/", "/plan/", 1)
 	case "docs":
 		label = "Docs URL"
-		previewURL = strings.Replace(previewURL, "/f/", "/d/", 1)
-		manageURL = strings.Replace(manageURL, "/f/", "/d/", 1)
 	}
 	fmt.Printf("%-12s %s\n", label+":", previewURL)
 	if manageURL != "" {
