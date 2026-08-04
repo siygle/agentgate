@@ -1,664 +1,102 @@
 # AgentGate
 
-A lightweight, self-hosted encrypted diff & file sharing tool. Rewritten in Go from [diff4](https://github.com/djyde/diff4).
+Self-hosted, end-to-end encrypted sharing for the things a coding agent produces — diffs,
+files, documents, plans, and runnable prototypes.
 
-Single binary, SQLite storage, zero external dependencies. All content is encrypted end-to-end with AES-256-GCM — the server never sees plaintext.
+Content is encrypted on your machine with AES-256-GCM before upload. The server only ever
+stores ciphertext, and never sees the passphrase. Recipients open a link, enter the
+passphrase, and everything is decrypted and rendered in their browser.
+
+Runs as a single Go binary with SQLite, or on Cloudflare Workers.
 
 ## How it works
 
-1. **Encrypt locally** — diffs and files are encrypted with AES-256-GCM on your machine before upload. The server never sees plaintext.
-2. **Share a link** — get a URL like `your-server.com/s/ABC123`. Recipients need the passphrase to decrypt.
-3. **Auto-expiry** — all content expires after 7 days by default; upload commands can override TTL.
-4. **Owner controls** — every new upload also returns a private Manage URL with an owner token. Open it to toggle whether a share should be kept indefinitely.
+1. **Encrypt locally** — the CLI encrypts before uploading. The server never sees plaintext.
+2. **Share a link** — you get `your-server.com/s/ABC123`. The passphrase goes out-of-band.
+3. **Auto-expiry** — 7 days by default, overridable per upload, or `--no-expiry`.
+4. **Owner controls** — each upload also returns a private Manage URL for retention.
 
-## Features
-
-- End-to-end encrypted diff and file sharing
-- Local CLI for sharing latest commits, staged changes, or arbitrary files
-- Configurable TTL per upload (`30m`, `24h`, `7d`, etc.)
-- `--no-expiry` uploads for shares that should be preserved from the start
-- Private Manage URL (`#owner=...`) for toggling indefinite retention after upload
-- Expiry badges in the web UI, including a preserved/permanent state
-- Markdown rendering for shared `.md` files
+Decrypted content is rendered inside a sandboxed, network-less iframe rather than on the
+page holding the decryption key. That boundary is the main design constraint of the project
+— see [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
-### Run the server
+Run a server:
 
 ```bash
-# Single binary
 ./agentgate-server --port 8080 --base-url https://your-domain.com
-
-# Or with Docker
-docker compose up -d
+# or: docker compose up -d
 ```
 
-### Use the CLI
+Then share something:
 
 ```bash
-# Set your server URL (required)
 export AGENTGATE_SERVER=https://your-domain.com
+agentgate key-gen && source ~/.zshrc   # first time only
 
-# Set up encryption key (first time only)
-agentgate key-gen
-source ~/.zshrc   # or ~/.bashrc
+agentgate git-latest              # latest commit diff
+agentgate git-staged              # staged changes
+agentgate files src/foo.ts        # arbitrary files
+agentgate docs ./notes.md         # Markdown/MDX documents
+agentgate plan ./plans/my-plan    # a reviewable visual plan
+agentgate webapp ./dist           # a runnable static prototype
 
-# Share your latest commit diff
-agentgate git-latest
-
-# Share staged changes
-agentgate git-staged
-
-# Share arbitrary files
-agentgate files src/foo.ts src/bar.ts
-
-# Share a runnable static webapp (a directory containing index.html)
-agentgate webapp ./dist
-
-# Share generic encrypted documents (no visual-plan-specific UI)
-agentgate docs ./docs/owner-mode-security-design.md
-
-# Share an encrypted visual plan (plan.mdx / plan.md or a folder)
-agentgate plan ./plans/my-plan
-
-# Share with custom TTL
-agentgate files -t 24h src/foo.ts
-agentgate files -t 7d src/foo.ts
-
-# Share without expiry
+agentgate files -t 24h src/foo.ts     # custom TTL
 agentgate files --no-expiry src/foo.ts
 ```
 
-## AI agent / skill setup
-
-AgentGate works well as a small tool that coding agents can call when they need to share encrypted diffs, files, docs, plans, or static prototypes. The agent only needs the CLI, a server URL, and a passphrase.
-
-### 1. Install the CLI where the agent runs
-
-```bash
-go install github.com/siygle/agentgate/cmd/agentgate@latest
-```
-
-Or place a prebuilt `agentgate` binary somewhere on the agent's `PATH`.
-
-### 2. Configure non-interactive environment variables
-
-Set these in the agent runtime, shell profile, `.envrc`, systemd unit, or secret manager:
-
-```bash
-export AGENTGATE_SERVER=https://your-domain.com
-export AGENTGATE_PASSPHRASE="use-a-long-random-shared-passphrase"
-```
-
-For a local one-time setup you can also run:
-
-```bash
-agentgate key-gen
-source ~/.zshrc   # or ~/.bashrc
-```
-
-For unattended agents, prefer setting `AGENTGATE_PASSPHRASE` explicitly through your normal secrets mechanism instead of relying on an interactive shell profile.
-
-### 3. Add an agent skill/instruction
-
-Example `SKILL.md` for agents that support filesystem-based skills:
-
-```markdown
----
-name: agentgate-share
-description: Share encrypted code diffs, files, docs, plans, or static webapps with AgentGate. Use when the user asks for a secure preview/share link.
----
-
-# AgentGate sharing
-
-Use `agentgate` to create encrypted AgentGate links.
-
-Before sharing:
-1. Confirm `agentgate` is installed: `agentgate key-get`.
-2. Confirm `AGENTGATE_SERVER` and `AGENTGATE_PASSPHRASE` are available.
-3. Never print or commit the passphrase.
-4. Keep the Manage URL private unless the user explicitly needs ownership controls.
-
-Commands:
-- `agentgate git-staged` — share staged changes.
-- `agentgate git-latest` — share the latest commit diff.
-- `agentgate files <paths...>` — share selected files.
-- `agentgate docs <file|dir>` — share rendered Markdown/MDX documents.
-- `agentgate plan <file|dir>` — share a visual plan bundle.
-- `agentgate webapp <dir>` — share a runnable static prototype with `index.html`.
-
-TTL:
-- Default server TTL is 7 days.
-- Use `-t 24h`, `-t 7d`, or `--no-expiry` when the user requests a different lifetime.
-
-After upload, return the public Preview/Docs/Plan/App URL to the user. Do not expose the passphrase in chat; share it out-of-band if needed.
-```
-
-### Built-in libraries for webapps
-
-AgentGate webapps run in a sandboxed iframe with `connect-src 'none'` — the framed app
-**cannot make any network request**, so every library it uses has to be present locally.
-Instead of bundling megabytes into each encrypted upload, reference a built-in library
-with an `agentgate:` URL. The app viewer inlines the server's own vendored copy into the
-sandbox before rendering, so it costs nothing in the payload.
-
-| Reference | Global | Library |
-|-----------|--------|---------|
-| `agentgate:marked` | `marked` | Markdown rendering |
-| `agentgate:highlight` | `hljs` | Syntax highlighting |
-| `agentgate:mermaid` | `mermaid` | Diagrams (flowchart, sequence, ER, …) |
-| `agentgate:diff2html` | `Diff2Html` | Unified-diff rendering |
-| `agentgate:lightweight-charts` | `LightweightCharts` | TradingView financial charts |
-
-Stylesheets work the same way through `<link rel="stylesheet">`:
-
-| Reference | Pairs with |
-|-----------|-----------|
-| `agentgate:highlight-css` | `agentgate:highlight` (light theme) |
-| `agentgate:highlight-dark-css` | `agentgate:highlight` (dark theme) |
-| `agentgate:diff2html-css` | `agentgate:diff2html` |
-| `agentgate:tokens` | AgentGate's design tokens (colours, fonts, light/dark) |
-| `agentgate:renderer` | AgentGate's content styles (`.markdown-body`, tables, code blocks) |
-
-```html
-<link rel="stylesheet" href="agentgate:highlight-css">
-<script src="agentgate:marked"></script>
-<script src="agentgate:highlight"></script>
-<script src="agentgate:lightweight-charts"></script>
-
-<div id="chart" style="height: 420px"></div>
-<script>
-  document.body.insertAdjacentHTML("afterbegin", marked.parse("# Report"));
-  const chart = LightweightCharts.createChart(document.getElementById("chart"));
-  const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {});
-  candles.setData([
-    { time: "2026-07-20", open: 53.6, high: 57.3, low: 51.7, close: 53.2 },
-  ]);
-  chart.timeScale().fitContent();
-</script>
-```
-
-Each reference also accepts the longer spellings `agentgate://vendor/<name>.js` and
-`/static/vendor/<real-filename>`. Anything not listed above is left alone: a
-bundle-local path resolves from your uploaded files, and a remote URL stays remote —
-which means the sandbox blocks it.
-
-#### Only pay for what you use
-
-A built-in is inlined into the frame at view time, so a large one costs the reader
-download and parse time on every view — mermaid alone is 3.3 MB. Add
-`data-agentgate-when="<global>"` and it is dropped unless something else in your bundle
-mentions that global by name:
-
-```html
-<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
-```
-
-It is opt-in and never silently removes a library you asked for unconditionally: leave
-the attribute off and the library is always inlined. Mentions inside HTML comments do not
-count, and neither does the gated tag itself. The upshot is that deleting a feature from a
-copy of the template stops that feature's library being shipped too.
-
-AgentGate's own renderers do the same thing automatically — a document with no diagram
-never loads mermaid, one with no code never loads highlight.js — see `detectFeatures` in
-[`web/static/js/share-kind.js`](web/static/js/share-kind.js).
-
-A ready-to-upload starting point lives in [`docs/webapp-template/`](docs/webapp-template/)
-(markdown + diagram + chart, no network):
-
-```bash
-agentgate webapp ./docs/webapp-template
-```
-
-The vendored files and their pinned versions are listed in
-[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md). They are committed
-rather than loaded from a CDN because the viewer page holds the decryption key and the
-remembered passphrase — third-party JS on that origin could read both.
-
-For pi, one possible location is `~/.pi/agent/skills/agentgate-share/SKILL.md`. Other agents can use the same text as a tool instruction or custom skill.
-
-### 4. Optional: point agents at the LLM reference
-
-A running AgentGate server exposes:
-
-- `/llms.txt` — short integration index
-- `/llms-full.txt` — complete CLI/API/encryption reference for agents
-
-Add `https://your-domain.com/llms-full.txt` to your agent's project docs or retrieval sources when it supports URL-based documentation.
-
-## CLI commands
-
-| Command | Description |
-|---------|-------------|
-| `agentgate key-gen [key]` | Generate or set encryption passphrase |
-| `agentgate key-get` | Print current passphrase |
-| `agentgate git-latest` | Encrypt & share the latest commit diff |
-| `agentgate git-staged` | Encrypt & share staged changes |
-| `agentgate files <paths...>` | Encrypt & share file contents |
-| `agentgate webapp <dir>` | Encrypt & share a runnable static webapp |
-| `agentgate docs <file\|dir>` | Encrypt & share generic documents at `/d/{id}` |
-| `agentgate plan <file\|dir>` | Encrypt & share a visual plan bundle at `/plan/{id}` |
-
-All upload commands accept `-s, --server <url>`, `-p, --passphrase <key>`, `-t, --ttl <duration>`, and `--no-expiry` flags. TTL examples: `30m`, `24h`, `7d`.
-
-`--no-expiry` is mutually exclusive with `-t/--ttl`.
-
-## Sharing documents
-
-`agentgate docs <file|dir>` encrypts a Markdown/MDX file or folder and returns a **Docs URL** at `/d/{id}`. After the recipient enters the passphrase, the bundle is decrypted in the browser and rendered according to the files you uploaded. AgentGate does not add `canvas.mdx`, visual-plan labels, recap labels, or feedback UI in generic document mode.
-
-Use this mode for normal specs, reports, notes, and security design docs where the uploaded file structure should be preserved as-is.
-
-## Sharing a visual plan
-
-`agentgate plan <file|dir>` encrypts a `plan.mdx`, `plan.md`, or plan folder and returns a **Plan URL** at `/plan/{id}`. After the recipient enters the passphrase, the bundle is decrypted in the browser and rendered as a reviewable Markdown/MDX-style visual plan.
-
-This first version is designed for Agent-Native-style `/visual-plan` output in local-files form: `plan.mdx` is used as the entry document when present, with a sidebar showing the rest of the bundled files. The server stores only encrypted data; plan text is never visible server-side.
-
-## Sharing a webapp
-
-`agentgate webapp <dir>` encrypts a directory of static files (the same end-to-end encryption as `files`) and returns an **App URL** at `/app/{id}`. After the recipient enters the passphrase, the bundle is decrypted in the browser, assembled into a single self-contained page, and run inside a sandboxed `<iframe>`.
-
-The directory must contain `index.html` at its root. Referenced local stylesheets and scripts (`<link href>`, `<script src>`) are inlined; local `<img>`/`<audio>`/`<video>`/SVG and CSS `url(...)`/`@font-face` references become data URIs. Binary assets (PNG/JPG/GIF/WebP, fonts, MP3/MP4, WASM, …) are base64-embedded into the encrypted bundle, so images, fonts, and media render without any external requests.
-
-Limitations (this is for sharing runnable prototypes, not hosting a site):
-
-- **Must be self-contained.** The framed app runs under a strict Content-Security-Policy (`default-src 'none'; connect-src 'none'; …`) so it **cannot make any network requests** — no `fetch`, XHR, WebSocket, or external images/fonts/scripts. Bundle everything you need; a webapp that relies on calling an external API will not work. This keeps decrypted content from being exfiltrated off the viewer page.
-- **Bundle size.** Binary assets grow the encrypted payload. The CLI warns past a ~1 MB soft budget, and the server enforces a hard limit (Cloudflare D1-only mode ~2 MB per share; raise it with R2 on the Worker, or `AGENTGATE_MAX_UPLOAD_BYTES` on self-host). Oversized uploads are rejected with HTTP 413.
-- **Opaque origin.** The iframe runs without `allow-same-origin`, so `localStorage` and cookies are unavailable to the app by design.
-- **A webapp is recognised by its contents, not its URL.** A bundle with `index.html` at the root runs as a webapp at any of its links; one without renders as a plain file bundle. The Manage URL controls retention either way.
-
-Successful uploads print both a public Preview URL and, on supported servers, a private Manage URL:
-
-```text
-Preview URL: https://your-domain.com/s/ABC123
-Manage URL:  https://your-domain.com/s/ABC123#owner=<owner-token>
-```
-
-Every kind of share previews at `/s/{id}` — the viewer picks how to render it from the
-decrypted payload. The older kind-specific links (`/p/`, `/f/`, `/app/`, `/plan/`, `/d/`)
-still resolve and always will, so any link already handed out keeps working; they are
-simply no longer issued.
-
-Keep the Manage URL private. Anyone with this URL can toggle indefinite retention for that share.
-
-If the server returns a `localhost`/`127.0.0.1` link (because its `--base-url` was left at the default) the CLI rewrites the scheme and host to match the `-s`/`AGENTGATE_SERVER` address you uploaded to, so the printed links stay usable.
-
-## CLI environment variables
-
-| Env | Flag | Description |
-|-----|------|-------------|
-| `AGENTGATE_SERVER` | `-s, --server` | Server URL (required) |
-| `AGENTGATE_PASSPHRASE` | `-p, --passphrase` | Encryption passphrase |
-| — | `-t, --ttl` | Optional share lifetime, e.g. `24h`, `7d`, `30m`. Default: `7d` |
-| — | `--no-expiry` | Create the share with indefinite retention enabled |
-
-## Managing expiry
-
-AgentGate creates an owner token for each new share and stores only its SHA-256 hash server-side. The token is returned once as part of the Manage URL fragment:
-
-```text
-https://your-domain.com/s/ABC123#owner=<owner-token>
-```
-
-When this URL is opened in the browser, the page shows a **永久保留** toggle. Turning it on sets the share to never expire; turning it off restores normal expiration. If the previous deadline is already in the past, the server resets expiration to the default 7 days.
-
-The same operation is available through authenticated PATCH endpoints:
-
-```bash
-curl -X PATCH https://your-domain.com/api/files/ABC123 \
-  -H "Authorization: Bearer <owner-token>" \
-  -H "Content-Type: application/json" \
-  -d '{"never_expires":true}'
-```
-
-Use `/api/diff/{id}` for diff shares and `/api/files/{id}` for file shares.
-
-## Server options
-
-| Flag | Env | Default | Description |
-|------|-----|---------|-------------|
-| `--port` | `PORT` | `8080` | HTTP port |
-| `--db` | `DATABASE_PATH` | `./agentgate.db` | SQLite database path |
-| `--base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL for shared links |
-| `--blob-dir` | `AGENTGATE_BLOB_DIR` | *(empty)* | Directory for external encrypted blob storage (empty = store blobs inline in SQLite) |
-| — | `AGENTGATE_MAX_UPLOAD_BYTES` | `10485760` | Max encrypted payload per share; larger uploads get HTTP 413 |
-| — | `AGENTGATE_SESSION_SECRET` | *(empty)* | HMAC secret for admin sessions. **Empty disables the owner dashboard.** |
-| — | `AGENTGATE_OWNER_KEY` | *(empty)* | Owner-key login secret for the dashboard (empty = that method off) |
-| — | `AGENTGATE_SESSION_TTL` | `43200` | Admin session lifetime, seconds (12h) |
-| — | `AGENTGATE_CF_ACCESS_ENABLED` | `false` | `true` to accept Cloudflare Access JWTs (see note) |
-| — | `AGENTGATE_CF_ACCESS_TEAM_DOMAIN` | *(empty)* | `<team>.cloudflareaccess.com` |
-| — | `AGENTGATE_CF_ACCESS_AUD` | *(empty)* | Expected Access application `aud` tag |
-| — | `AGENTGATE_CF_ACCESS_EMAILS` | *(empty)* | Optional comma-separated email allowlist |
-
-### Owner dashboard (`/admin`)
-
-Set `AGENTGATE_SESSION_SECRET` (a long random string) to enable the owner
-dashboard, then add at least one login method — `AGENTGATE_OWNER_KEY` and/or
-Cloudflare Access. It lists every share in the deployment with actions to keep
-forever, revoke, re-share (issue a new link for the same content, passphrase
-unchanged), and delete. On the Cloudflare Worker the same dashboard is enabled by
-setting the `SESSION_SECRET`/`OWNER_KEY` secrets (`wrangler secret put`) and the
-`CF_ACCESS_*` vars.
-
-> **Cloudflare Access on self-host — lock the origin.** The JWT is fully verified
-> (signature + `aud` + issuer + expiry), so a forged `Cf-Access-Jwt-Assertion`
-> header is rejected. But only enable `AGENTGATE_CF_ACCESS_ENABLED` when your
-> origin is reachable **solely through Cloudflare** — otherwise someone could hit
-> the origin directly and bypass Access entirely. Enabling the orange-cloud proxy
-> + SSL is **not** sufficient; you must also lock the origin, via any one of:
-> (1) a `cloudflared` tunnel (origin opens no public port), (2) a firewall allowing
-> only Cloudflare IP ranges, or (3) Authenticated Origin Pulls (mTLS). The Worker
-> backend has no such concern (it runs on Cloudflare).
-
-### Owner reset & re-share (recovery key)
-
-For shares uploaded with a recovery key configured, an owner who has lost the
-original passphrase can recover the content and mint a fresh link without ever
-sending the private key to the server. This is the v2 envelope scheme: the
-share's content key (DEK) is wrapped both under the passphrase and, optionally,
-under an offline recovery public key (ECDH-P256 -> HKDF-SHA256 -> AES-256-GCM).
-The private half of that keypair never touches the server or the database —
-it is only ever pasted into the browser tab performing the reset.
-
-**1. Generate a recovery keypair (offline, once per deployment):**
-
-```bash
-go run ./cmd/agentgate recovery-keygen -o /path/to/recovery.key
-# optionally encrypt the key file at rest:
-go run ./cmd/agentgate recovery-keygen -o /path/to/recovery.key -p <a-strong-passphrase>
-```
-
-This prints the recovery **public** key to stdout and writes the **private**
-key to `-o` (mode `0600`). Store the private key file **OFFLINE** — e.g. a
-password manager, an air-gapped drive, or a hardware token. Anyone holding it
-can recover every v2 share ever uploaded with the matching public key, so
-treat it like a master key. Shares uploaded **without** a recovery key
-configured at all have no recovery path — they can only be revoked or
-deleted, never reset.
-
-**2. Enable it on the uploader — but only after the server is ready:**
-
-```bash
-export AGENTGATE_RECOVERY_PUBKEY="<the public key printed above>"
-go run ./cmd/agentgate diff -s https://your-domain.com -p <passphrase> my.diff
-```
-
-> ⚠️ **Rollout ordering matters.** Only set `AGENTGATE_RECOVERY_PUBKEY` on the
-> uploader **after** you have deployed a v2-capable server *and* the matching
-> v2-capable web viewer. If the uploader is configured with a recovery pubkey
-> before the server/viewer understand v2 envelopes, the recovery wrap is
-> silently dropped and the affected shares can **never** be decrypted or
-> recovered again — this is silent, unrecoverable data loss, not a visible
-> error. When in doubt, deploy the server/viewer first, confirm a v2 upload
-> round-trips (see `cmd/crossvector` for the Go<->JS interop check), and only
-> then flip on `AGENTGATE_RECOVERY_PUBKEY` for uploaders.
-
-**3. Reset a share from `/admin`:**
-
-In the owner dashboard, a share that was uploaded with a recovery key shows a
-**Reset 換金鑰** action. Clicking it prompts for the offline recovery private
-key (pasted locally into the browser — it is never sent to the server) and:
-
-1. Unwraps the share's DEK in-browser using the pasted recovery private key
-   (`wrap_recov`, ECDH + HKDF + AES-GCM).
-2. Generates a fresh random passphrase and re-wraps the same DEK under it
-   (new salt/iv; the underlying content ciphertext is untouched).
-3. Uploads the new wrap to the server, which mints a new share id/link and
-   revokes the old one in the same operation.
-
-The dashboard then displays the new link and the new (randomly generated)
-passphrase — copy both to whoever needs access. The **old** link stops
-resolving (404 / revoked) and the **old** passphrase can no longer decrypt
-anything, since the underlying source record has been revoked. Shares
-uploaded without a recovery key (no `wrap_recov`) cannot be reset this way;
-the dashboard falls back to Revoke or Delete for those.
-
-### Blob storage (self-host)
-
-By default the encrypted blob is stored inline in the SQLite `encrypted_data`
-column — simple, and SQLite has no small per-value cap. Set **`AGENTGATE_BLOB_DIR`**
-to instead write each blob to a file under that directory (keyed `<kind>/<id>`),
-keeping metadata in SQLite. This is the self-host analog of the Worker's R2 mode:
-it keeps the database lean and makes large bundles and backups easier. Point it
-at a path on the same persistent volume as the DB. Switching modes is safe —
-existing inline records keep reading from the DB; only new records use the
-directory. Expired blobs are removed by the cleanup pass.
-
-## Deployment
-
-### Docker Compose
-
-```yaml
-services:
-  agentgate:
-    build: .
-    ports:
-      - "8080:8080"
-    volumes:
-      - data:/data
-    environment:
-      BASE_URL: https://your-domain.com
-      AGENTGATE_BLOB_DIR: /data/blobs   # store blobs as files on the volume; omit to keep them inline in SQLite
-
-volumes:
-  data:
-```
-
-### systemd
-
-```ini
-[Unit]
-Description=AgentGate server
-
-[Service]
-ExecStart=/usr/local/bin/agentgate-server --db /var/lib/agentgate/agentgate.db --base-url https://your-domain.com
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Cloudflare Workers
-
-AgentGate can also run on Cloudflare Workers (edge, no server to host). The Worker
-lives in [`worker/`](worker/) and is a TypeScript + Hono port of the same HTTP API,
-with a **Cron Trigger** for expired-record cleanup. The frontend in `web/static` and
-the CLI are shared unchanged — a shared HTTP contract (`docs/api-contract.md`) is
-verified against both backends by `test/contract/`.
-
-Storage is configurable via the **`USE_R2`** variable, so R2 (which needs a paid
-subscription) is entirely optional:
-
-| `USE_R2` | Storage | When |
-|----------|---------|------|
-| `false` (default) | **D1-only** — metadata *and* encrypted blobs in D1 | Works on the free tier, no R2 needed |
-| `true` | **D1 + R2 hybrid** — metadata in D1, blobs in R2 | Best for very large webapp/plan bundles |
-
-Everything works out of the box in D1-only mode. Enable R2 later without code
-changes; existing D1-stored records keep working.
-
-> **Why no one-click button?** The frontend in `web/static` is shared with the
-> self-host server, so the Worker is intentionally *not* self-contained in `worker/`
-> (its build step reads `../web/static`). Cloudflare's one-click "Deploy to Cloudflare"
-> button isolates the chosen subdirectory and would miss those files. Connect the
-> **full repo** via Workers Builds (below) so the shared assets are present at build time.
-
-#### 1. Provision resources
-
-D1-only (default) needs just a database:
-
-```bash
-cd worker
-npm install
-npx wrangler d1 create agentgate            # copy the printed database_id into wrangler.jsonc
-```
-
-To use R2 (optional): uncomment the `r2_buckets` block in `wrangler.jsonc`, set
-`USE_R2` to `"true"` there, then:
-
-```bash
-npx wrangler r2 bucket create agentgate-blobs
-```
-
-#### 2. Deploy via Git (Workers Builds)
-
-In the Cloudflare dashboard: **Workers & Pages → Create → Workers → Import a
-repository**, select your fork of `siygle/agentgate`, and set:
-
-- **Root directory**: `worker`
-- **Build command**: `npm run build` (runs `sync-assets`)
-- **Deploy command**: `npx wrangler deploy`
-
-Cloudflare clones the **full repo** (so `../web/static` is available) and reads
-`worker/wrangler.jsonc` to bind the D1 database and R2 bucket. Each push rebuilds.
-
-Or deploy manually from a full checkout:
-
-```bash
-cd worker
-npm run deploy                              # sync-assets, then wrangler deploy
-```
-
-#### 3. Apply migrations and set the public URL
-
-```bash
-npx wrangler d1 migrations apply agentgate --remote
-```
-
-Then set the `BASE_URL` variable (Worker → Settings → Variables) to your public URL
-(`https://<name>.workers.dev` or a custom domain) so returned Preview/Manage links
-are correct.
-
-#### Local development
-
-`npm run dev` runs `wrangler dev` with a local D1 + R2 and serves `web/static`. Apply
-the local schema once with `npx wrangler d1 migrations apply agentgate --local`, then
-verify with the shared contract test:
-`node ../test/contract/run.mjs http://localhost:8787`.
-
-The CLI does not change — point it at the Worker with
-`export AGENTGATE_SERVER=https://<name>.workers.dev`.
+Every share previews at `/s/{id}`; the viewer works out how to render it from the decrypted
+payload.
+
+## What you can share
+
+| Command | Renders as |
+|---------|-----------|
+| `git-latest`, `git-staged` | Split/unified diff with syntax highlighting |
+| `files` | File browser with markdown preview and per-block copy |
+| `docs` | Markdown/MDX document, as written |
+| `plan` | Visual plan — MDX components, mermaid diagrams, review notes |
+| `webapp` | A self-contained static page, run in the sandbox |
+
+## Documentation
+
+| | |
+|---|---|
+| [docs/cli.md](docs/cli.md) | Commands, flags, share URLs, per-kind notes, managing expiry |
+| [docs/agents.md](docs/agents.md) | Wiring AgentGate into a coding agent; built-in libraries for webapps |
+| [docs/self-host.md](docs/self-host.md) | Server options, Docker, systemd, blob storage, builds, tests |
+| [docs/cloudflare.md](docs/cloudflare.md) | Deploying on Workers with D1 (R2 optional) |
+| [docs/admin.md](docs/admin.md) | Owner dashboard, and passphrase recovery via an offline key |
+| [docs/architecture.md](docs/architecture.md) | How rendering is sandboxed, project layout, encryption |
+| [docs/api-contract.md](docs/api-contract.md) | The HTTP contract both backends implement |
+
+A running server also serves `/llms.txt` and `/llms-full.txt` for agents.
 
 ## Security
 
-- **AES-256-GCM** encryption
-- **PBKDF2-SHA256** key derivation with 600,000 iterations
-- Client-side encryption only — the server stores ciphertext
-- Passphrase shared out-of-band by you
-- Owner tokens are returned once and stored only as SHA-256 hashes
-- Manage URLs use URL fragments (`#owner=...`), so owner tokens are not sent to the server during normal page loads
-- All content auto-expires after 7 days by default, with per-upload TTL override or explicit no-expiry mode
+- **AES-256-GCM** content encryption, **PBKDF2-SHA256** key derivation (600,000 iterations)
+- Client-side encryption only — the server stores ciphertext and never sees the passphrase
+- Decrypted content renders in an opaque-origin iframe under `connect-src 'none'`, so it can
+  reach neither the decryption key nor the network
+- Owner tokens are returned once, stored only as SHA-256 hashes, and travel in the URL
+  fragment so they are not sent to the server on a page load
+- Optional offline recovery key for resetting a share whose passphrase was lost
+- Everything auto-expires by default
 
 ## Tech stack
 
-Two interchangeable backends behind one shared HTTP API and frontend:
+- **Self-host server** — Go, Chi, SQLite (pure Go, no CGO), embedded assets
+- **Cloudflare Worker** — TypeScript, Hono, D1 (+ optional R2), on workerd
+- **CLI** — Go, single cross-compiled binary
+- **Frontend** — vanilla JS, shared verbatim by both backends
 
-- **Self-host server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
-- **Cloudflare Worker** — TypeScript, Hono, D1 (optional R2 for blobs via `USE_R2`), Cron Trigger cleanup
-- **CLI** — Go, cross-compiled to single binaries (unchanged across both backends)
-- **Frontend** — Vanilla JS; pages fetch ciphertext via the JSON API and decrypt in the browser
-
-### How share content is rendered
-
-Every share — diff, files, documents, visual plan, uploaded webapp — is viewed at
-`/s/{id}` and rendered the same way.
-
-The page you open holds the decryption key, your remembered passphrase, and — if you are
-the operator — an admin session cookie. So it does not interpret share content at all.
-It decrypts, then hands the result to `web/static/js/sandbox.js`, which assembles a
-self-contained document and runs it in an **opaque-origin `<iframe srcdoc>`** under
-`default-src 'none'; connect-src 'none'`. Framed content cannot reach the host page's
-DOM or storage, and cannot make a network request of any kind.
-
-Two things run in that frame:
-
-- **Built-in renderers** in `web/static/renderers/`: `diff`, `files`, and `doc`
-  (documents and visual plans — markdown, MDX, mermaid, wireframes), sharing the find
-  bar and host bridge in `common/`. Their scripts are resolved from the server, never
-  from the payload, so a share cannot substitute its own `renderer.js`.
-- **Uploaded webapps** (`agentgate webapp`), which supply their own `index.html`.
-
-`web/static/js/share-kind.js` picks between them from the decrypted payload, so the URL
-does not decide how something renders. The older `/p/ /f/ /app/ /plan/ /d/` links are
-kept as permanent aliases — a `--no-expiry` share must keep resolving forever — and open
-the same shell.
-
-Everything outside the frame — header, expiry badge, owner toggle, display settings,
-export, review notes, the address bar — is host chrome in `web/static/js/shell.js`. The
-two sides talk over a small `postMessage` bridge: the frame reports its content height
-(so the host grows the iframe and the page keeps a single scrollbar) and its current
-file and scroll anchor; the host sends display settings, deep links, and print scope.
-Values coming *from* the frame are treated as untrusted and sanitised before use.
-
-Rendering libraries are vendored rather than loaded from a CDN, and inlined into the
-frame on demand via `agentgate:` references — see
-[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md) for why and for the
-pinned versions.
-
-## Project structure
-
-```
-cmd/server/        Self-host server entry point
-cmd/agentgate/     CLI entry point (shared by both backends)
-cmd/crossvector/   Go<->JS v2-envelope interop test vector (regression check)
-internal/server/   HTTP handlers, router, middleware
-internal/db/       SQLite database layer
-internal/crypto/   AES-256-GCM encryption (CLI)
-internal/id/       ID generation
-internal/cleanup/  Expired content cleanup (goroutine)
-web/static/        Shared frontend (single source of truth for both backends)
-  css/tokens.css     Design tokens + reset — used by host chrome AND the sandbox
-  css/style.css      Host chrome only (never styles share content)
-  css/renderer.css   Share-content styles, inlined into the sandbox
-  js/sandbox.js      Assembles + runs share content in the opaque-origin iframe
-  js/shell.js        Host chrome around a sandboxed renderer
-  js/share-kind.js   Picks a renderer from the decrypted payload
-  renderers/common/  Bridge + find bar shared by the renderers
-  renderers/{diff,files,doc}/  Built-in renderers
-  vendor/            Pinned third-party libs (see vendor/VERSIONS.md)
-  views/             share.html (all share routes) + admin.html
-tools/mdx-bundle/  Builds vendor/mdx-runtime.bundle.js (run only on version bumps)
-worker/            Cloudflare Worker (TypeScript + Hono, D1 + R2)
-test/contract/     HTTP contract test run against both backends
-docs/api-contract.md  Shared API contract (single source of truth)
-docs/webapp-template/ Ready-to-upload starting point for `agentgate webapp`
-```
-
-## Prebuilt binaries
-
-Each tagged release publishes statically-linked binaries on the
-[GitHub Releases](https://github.com/siygle/agentgate/releases) page (built by
-`.github/workflows/release.yml` from the `make release` matrix). Assets are named
-`agentgate-<os>-<arch>` (CLI) and `agentgate-server-<os>-<arch>` (server) for
-`darwin`/`linux` × `arm64`/`amd64`, plus `checksums.txt`.
-
-```bash
-# Example: install the CLI on Linux amd64
-curl -fsSL -o agentgate \
-  https://github.com/siygle/agentgate/releases/latest/download/agentgate-linux-amd64
-chmod +x agentgate && sudo mv agentgate /usr/local/bin/
-```
-
-Maintainers cut a release by pushing a tag:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-## Building from source
-
-```bash
-# Build both binaries
-make build
-
-# Cross-compile for all platforms
-make release
-
-# Build Docker image
-make docker
-```
+Both backends implement the same contract and are verified against it by
+`test/contract/run.mjs`.
 
 ## Credits
 
-Rewritten in Go from [diff4](https://github.com/djyde/diff4) by [Randy Lu](https://x.com/randyloop). The original project is built with Next.js, PostgreSQL, and Prisma. This rewrite replaces the stack with Go + SQLite for a lighter, single-binary self-hosted deployment.
+Rewritten in Go from [diff4](https://github.com/djyde/diff4) by
+[Randy Lu](https://x.com/randyloop). The original is built with Next.js, PostgreSQL, and
+Prisma; this rewrite swaps that for Go + SQLite to get a lighter, single-binary self-hosted
+deployment.
