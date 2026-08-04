@@ -175,6 +175,20 @@ Each reference also accepts the longer spellings ` + "`agentgate://vendor/<name>
 a bundle-local path resolves from the uploaded files, and a remote URL stays remote — which
 means the sandbox will block it.
 
+### Only inline what the webapp uses
+
+A built-in is inlined into the frame on every view, so a large one costs the reader time
+each time (mermaid is 3.3 MB). Add ` + "`data-agentgate-when=\"<global>\"`" + ` and the library is
+dropped unless something else in the bundle mentions that global by name:
+
+` + "```" + `html
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+` + "```" + `
+
+Opt-in: without the attribute the library is always inlined, so nothing you asked for
+unconditionally is removed. Mentions inside HTML comments do not count. Prefer adding the
+attribute to every heavy built-in you reference.
+
 Use ` + "`agentgate webapp <dir>`" + ` to upload. The directory must contain ` + "`index.html`" + ` at its root.
 
 ## Encryption Details

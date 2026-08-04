@@ -28,8 +28,10 @@
     agentgate:highlight-dark-css  (dark theme)
     agentgate:diff2html-css       (pairs with agentgate:diff2html)
 
-  Delete the sections you do not need — every byte you leave in is a byte in the
-  encrypted upload, and the CLI warns past a ~1 MB soft budget.
+  Delete the sections you do not need. Two separate costs are worth deleting for: bytes in
+  the encrypted upload (the CLI warns past a ~1 MB soft budget), and the built-in libraries
+  inlined at view time — the `data-agentgate-when` attributes near the bottom mean a
+  section you remove stops pulling its library in as well.
 -->
 <html lang="en">
 <head>
@@ -162,10 +164,17 @@ flowchart LR
   </section>
 </main>
 
-<script src="agentgate:marked"></script>
-<script src="agentgate:highlight"></script>
-<script src="agentgate:mermaid"></script>
-<script src="agentgate:lightweight-charts"></script>
+<!--
+  data-agentgate-when="X" drops the library unless something else in this bundle mentions
+  X by name. It is opt-in: leave the attribute off and the library is always inlined.
+
+  Use it on anything heavy. mermaid is 3.3 MB, so a copy of this template with the diagram
+  section deleted would otherwise still pay for it on every view.
+-->
+<script src="agentgate:marked" data-agentgate-when="marked"></script>
+<script src="agentgate:highlight" data-agentgate-when="hljs"></script>
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+<script src="agentgate:lightweight-charts" data-agentgate-when="LightweightCharts"></script>
 
 <script>
 (function () {

@@ -102,13 +102,39 @@
   }
 
   function attachCodeHighlight(container) {
-    if (!container || typeof hljs === "undefined") return;
+    if (!container) return;
     var blocks = container.querySelectorAll("pre code");
+    if (typeof hljs === "undefined") {
+      // Unhighlighted code still reads fine, so this degrades rather than breaks — but it
+      // means detection missed something, which is worth knowing about.
+      if (blocks.length) {
+        console.warn("AgentGate: content has code blocks but highlight.js was not inlined");
+      }
+      return;
+    }
     for (var i = 0; i < blocks.length; i++) hljs.highlightElement(blocks[i]);
   }
 
   function renderMermaid(container) {
-    if (!container || typeof mermaid === "undefined") return;
+    if (!container) return;
+    // The library is only inlined when detectFeatures (share-kind.js) saw a diagram in the
+    // payload. If detection missed one, say so in place of the diagram: a blank gap would
+    // look like a rendering bug and hide the real cause.
+    if (typeof mermaid === "undefined") {
+      var missed = container.querySelectorAll(".mermaid");
+      if (missed.length) {
+        console.error("AgentGate: content contains a mermaid diagram the sandbox did not inline mermaid for");
+        Array.prototype.forEach.call(missed, function (node) {
+          var note = document.createElement("pre");
+          note.className = "code-content ag-missing-lib";
+          note.textContent =
+            "Diagram not rendered — the mermaid library was not loaded for this share.\n\n" +
+            (node.textContent || "");
+          node.replaceWith(note);
+        });
+      }
+      return;
+    }
     try {
       mermaid.initialize({ startOnLoad: false, theme: UI.themeIsDark() ? "dark" : "default" });
       var nodes = container.querySelectorAll(".mermaid");

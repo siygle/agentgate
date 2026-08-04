@@ -8,7 +8,9 @@
   /static/renderers/, and injects the decrypted payload as inert JSON.
 
   markdown.js is shared with the doc renderer rather than duplicated: a bundle containing
-  .md files gets the same Source/Preview treatment either way.
+  .md files gets the same Source/Preview treatment either way. It and `marked` are dropped
+  entirely when the bundle has no markdown in it — see data-agentgate-when below and
+  detectFeatures in web/static/js/share-kind.js.
 -->
 <html lang="en">
 <head>
@@ -18,8 +20,8 @@
 
 <link rel="stylesheet" href="agentgate:tokens">
 <link rel="stylesheet" href="agentgate:renderer">
-<link rel="stylesheet" href="agentgate:highlight-css">
-<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="agentgate:highlight-css" data-agentgate-when="highlight">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)" data-agentgate-when="highlight">
 <link rel="stylesheet" href="/static/renderers/common/frame-ui.css">
 </head>
 <body class="ag-frame">
@@ -41,10 +43,10 @@
   </div>
 </div>
 
-<script src="agentgate:marked"></script>
-<script src="agentgate:highlight"></script>
+<script src="agentgate:marked" data-agentgate-when="markdown"></script>
+<script src="agentgate:highlight" data-agentgate-when="highlight"></script>
 <script src="/static/renderers/common/frame-ui.js"></script>
-<script src="/static/renderers/doc/markdown.js"></script>
+<script src="/static/renderers/doc/markdown.js" data-agentgate-when="markdown"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

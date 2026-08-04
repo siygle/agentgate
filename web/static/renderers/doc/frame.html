@@ -12,9 +12,10 @@
     * injects the decrypted payload as inert JSON in #agentgate-payload,
     * appends the host bridge that reports height and relays settings.
 
-  Elements marked data-agentgate-when="mdx" are dropped unless the payload actually
-  contains an .mdx file. That keeps the 584 KB React/MDX bundle — and the 'unsafe-eval'
-  its compiler needs — out of every plain-Markdown share.
+  Elements marked data-agentgate-when="X" are dropped unless the payload actually needs X
+  (see detectFeatures in web/static/js/share-kind.js). That keeps mermaid's 3.3 MB out of
+  a document with no diagram, highlight.js out of one with no code, and the React/MDX
+  bundle — plus the 'unsafe-eval' its compiler needs — out of every plain-Markdown share.
 -->
 <html lang="en">
 <head>
@@ -24,8 +25,8 @@
 
 <link rel="stylesheet" href="agentgate:tokens">
 <link rel="stylesheet" href="agentgate:renderer">
-<link rel="stylesheet" href="agentgate:highlight-css">
-<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="agentgate:highlight-css" data-agentgate-when="highlight">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)" data-agentgate-when="highlight">
 <link rel="stylesheet" href="/static/renderers/common/frame-ui.css">
 </head>
 <body class="ag-frame">
@@ -45,8 +46,8 @@
 </div>
 
 <script src="agentgate:marked"></script>
-<script src="agentgate:highlight"></script>
-<script src="agentgate:mermaid"></script>
+<script src="agentgate:highlight" data-agentgate-when="highlight"></script>
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
 <script src="agentgate:mdx" data-agentgate-when="mdx"></script>
 <script src="/static/renderers/common/frame-ui.js"></script>
 <script src="markdown.js"></script>

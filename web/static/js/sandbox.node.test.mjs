@@ -119,6 +119,61 @@ function check(name, cond) {
   }
 }
 
+// --- webapp feature gating --------------------------------------------------------
+// Opt-in, and gated on the bundle mentioning the library elsewhere. Getting this wrong in
+// the "drop it" direction breaks an uploaded webapp, so the false cases below are the
+// important ones.
+{
+  const gatedTag = '<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>';
+
+  // The gated tag must not count as evidence for itself, or gating would never drop
+  // anything.
+  const selfOnly = [{ title: "index.html", content: gatedTag + "<div>hello</div>" }];
+  check("a gated tag is not its own evidence", !/agentgate:mermaid/.test(I.webappHaystack(selfOnly)));
+  check("unused library is dropped", I.mentionsFeature(I.webappHaystack(selfOnly), "mermaid") === false);
+
+  // Mentioned anywhere else in the bundle — inline script, separate file, or markup.
+  for (const [label, extra] of [
+    ["inline script", { title: "index.html", content: gatedTag + "<script>mermaid.run()</script>" }],
+    ["separate file", { title: "app.js", content: "mermaid.initialize({})" }],
+    ["a class in markup", { title: "index.html", content: gatedTag + '<div class="mermaid">g</div>' }],
+  ]) {
+    const bundle = extra.title === "index.html" ? [extra] : [selfOnly[0], extra];
+    check(`used library kept: ${label}`, I.mentionsFeature(I.webappHaystack(bundle), "mermaid") === true);
+  }
+
+  // A comment cannot call anything. This matters in practice: a bundle that documents the
+  // available libraries (docs/webapp-template/index.html does) would otherwise look like
+  // it used every one of them.
+  const commentOnly = [
+    { title: "index.html", content: gatedTag + "<!-- mermaid is available if you need it -->" },
+  ];
+  check("a mention in an HTML comment does not count",
+    I.mentionsFeature(I.webappHaystack(commentOnly), "mermaid") === false);
+  const commentPlusUse = [
+    { title: "index.html", content: gatedTag + "<!-- about mermaid --><script>mermaid.run()</script>" },
+  ];
+  check("a real use alongside a comment still counts",
+    I.mentionsFeature(I.webappHaystack(commentPlusUse), "mermaid") === true);
+
+  // Whole-word only, so a lookalike identifier does not drag 3.3 MB in.
+  const lookalike = [selfOnly[0], { title: "app.js", content: "var mermaidish = 1; notmermaid();" }];
+  check("substring is not a mention", I.mentionsFeature(I.webappHaystack(lookalike), "mermaid") === false);
+
+  // Binary assets are base64 and could contain anything; they are not scanned.
+  const binary = [selfOnly[0], { title: "img.png", content: "bWVybWFpZA==", encoding: "base64" }];
+  check("base64 assets are not scanned", I.mentionsFeature(I.webappHaystack(binary), "mermaid") === false);
+
+  // The attribute value goes into a RegExp, so it must not be able to change its meaning.
+  const hostile = [{ title: "index.html", content: "anything at all" }];
+  assert.doesNotThrow(
+    () => I.mentionsFeature(I.webappHaystack(hostile), "a)|(.*"),
+    "a hostile feature name cannot break the matcher"
+  );
+  check("empty feature name matches nothing", I.mentionsFeature("mermaid", "") === false);
+  checks++;
+}
+
 // --- sanitising frame-reported values ---------------------------------------------
 // Framed code can postMessage anything. It has nothing to exfiltrate, but the host must
 // not hand a frame-supplied value to history.replaceState or to a layout property.

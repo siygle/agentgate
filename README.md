@@ -183,6 +183,26 @@ Each reference also accepts the longer spellings `agentgate://vendor/<name>.js` 
 bundle-local path resolves from your uploaded files, and a remote URL stays remote —
 which means the sandbox blocks it.
 
+#### Only pay for what you use
+
+A built-in is inlined into the frame at view time, so a large one costs the reader
+download and parse time on every view — mermaid alone is 3.3 MB. Add
+`data-agentgate-when="<global>"` and it is dropped unless something else in your bundle
+mentions that global by name:
+
+```html
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+```
+
+It is opt-in and never silently removes a library you asked for unconditionally: leave
+the attribute off and the library is always inlined. Mentions inside HTML comments do not
+count, and neither does the gated tag itself. The upshot is that deleting a feature from a
+copy of the template stops that feature's library being shipped too.
+
+AgentGate's own renderers do the same thing automatically — a document with no diagram
+never loads mermaid, one with no code never loads highlight.js — see `detectFeatures` in
+[`web/static/js/share-kind.js`](web/static/js/share-kind.js).
+
 A ready-to-upload starting point lives in [`docs/webapp-template/`](docs/webapp-template/)
 (markdown + diagram + chart, no network):
 

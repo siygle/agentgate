@@ -32,6 +32,8 @@
   }
 
   function highlightCode(code, lang) {
+    // Without hljs the source still displays, just unstyled — a soft degradation, unlike
+    // the markdown preview above which would be blank.
     if (typeof hljs === "undefined") return escapeHtml(code);
     try {
       if (lang && hljs.getLanguage(lang)) {
@@ -150,7 +152,14 @@
     var previewPane = document.createElement("div");
     previewPane.className = "markdown-body";
     previewPane.style.display = "none";
-    previewPane.innerHTML = MD ? MD.renderMarkdown(file.content || "") : "";
+    if (MD) {
+      previewPane.innerHTML = MD.renderMarkdown(file.content || "");
+    } else {
+      // renderMarkdownPanel is only reached for a markdown file, so detectFeatures should
+      // have requested `marked`. Show why the preview is empty instead of leaving a blank.
+      console.error("AgentGate: markdown file present but the markdown renderer was not inlined");
+      previewPane.textContent = "Preview unavailable — the markdown renderer was not loaded for this share.";
+    }
     attachCodeBlockCopyButtons(previewPane);
     target.appendChild(previewPane);
 

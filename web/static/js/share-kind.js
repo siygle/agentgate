@@ -42,6 +42,68 @@
     );
   }
 
+  function isMarkdownName(name) {
+    return /\.(md|mdx|markdown)$/i.test(name || "");
+  }
+
+  // payloadText concatenates every text file in the bundle. Binary assets carry
+  // encoding "base64" and are skipped — scanning base64 for source patterns would only
+  // produce false positives.
+  function payloadText(data, files) {
+    var parts = files
+      .filter(function (f) {
+        return f.encoding !== "base64";
+      })
+      .map(function (f) {
+        return String(f.content || "");
+      });
+    if (data.plan_mdx) parts.push(String(data.plan_mdx));
+    return parts.join("\n");
+  }
+
+  // detectFeatures decides which built-in libraries a payload actually needs, so the
+  // sandbox can leave the rest out. This matters a lot: mermaid alone is 3.3 MB, and
+  // before this every document frame carried it whether or not it contained a diagram.
+  //
+  // Detection is deliberately over-inclusive. Including a library that turns out to be
+  // unused only costs bytes; leaving out one that IS used breaks rendering, so every rule
+  // here errs toward including. The renderers also say so out loud when they find content
+  // needing a library that was not inlined, rather than degrading quietly.
+  function detectFeatures(data, files, type) {
+    var text = payloadText(data, files);
+    var mdx = hasMdx(data, files);
+
+    // A ```mermaid / ~~~mermaid fence, the MDX <Mermaid> component, or an author-written
+    // .mermaid container.
+    var mermaid = /(^|\n)\s*(```+|~~~+)\s*mermaid\b/i.test(text) ||
+      /<Mermaid[\s/>]/.test(text) ||
+      /class\s*=\s*["']?[^"'>]*\bmermaid\b/i.test(text);
+
+    // Fenced or inline code needs highlighting. Mermaid fences are excluded because the
+    // doc renderer turns them into diagram containers, leaving no <pre><code> behind — so
+    // a diagram-only document does not need hljs. MDX always counts: several of its
+    // components (Endpoint, AnnotatedCode, Diff) emit <pre><code> of their own.
+    var withoutMermaidFences = text.replace(/(^|\n)\s*(```+|~~~+)\s*mermaid\b[\s\S]*?\2/gi, "\n");
+    var code =
+      /(^|\n)\s*(```+|~~~+)/.test(withoutMermaidFences) ||
+      /<pre[\s>]|<code[\s>]/i.test(withoutMermaidFences) ||
+      mdx;
+
+    var hasMarkdown = files.some(function (f) {
+      return isMarkdownName(f.title);
+    });
+
+    if (type === "files") {
+      // The files renderer displays every file's source through hljs, markdown included
+      // (its Source tab highlights the raw markdown), so highlighting is not gated here —
+      // gating it would leave source panes unstyled. `marked` is, since a bundle with no
+      // markdown never renders a preview.
+      return { markdown: hasMarkdown, highlight: true, mermaid: false, mdx: false };
+    }
+    // doc renderer: it always renders markdown, so `marked` is not gated.
+    return { markdown: true, highlight: code, mermaid: mermaid, mdx: mdx };
+  }
+
   function routeView() {
     var route = window.AgentGateShare && window.AgentGateShare.route;
     return (route && route.view) || "";
@@ -91,6 +153,9 @@
       return {
         renderer: "diff",
         label: "diff — " + (title || "untitled"),
+        // A diff always needs diff2html to parse it and hljs to colour it, so there is
+        // nothing to gate here.
+        features: { highlight: true },
         title: title || "diff",
         exportKind: "diff",
       };
@@ -98,15 +163,15 @@
 
     if (type === "visual-plan" || type === "documents") {
       var isPlan = type === "visual-plan";
-      var mdx = hasMdx(data, files);
+      var features = detectFeatures(data, files, "doc");
       return {
         renderer: "doc",
         label: (isPlan ? "visual plan" : "documents") + " — " + (title || "untitled"),
         title: title || (isPlan ? "Visual plan" : "Documents"),
-        // MDX pulls in a 584 KB React bundle and needs 'unsafe-eval' in the frame's CSP,
-        // so it is enabled only when the bundle actually contains an .mdx file.
-        features: { mdx: mdx },
-        allowEval: mdx,
+        features: features,
+        // MDX compilation evaluates the compiled document body, so its frame needs
+        // 'unsafe-eval'. Granted only when the bundle actually contains MDX.
+        allowEval: features.mdx,
         feedback: isPlan,
         exportKind: isPlan ? "plan" : "docs",
       };
@@ -116,9 +181,10 @@
       renderer: "files",
       label: files.length + " file" + (files.length === 1 ? "" : "s"),
       title: title || "files",
+      features: detectFeatures(data, files, "files"),
       exportKind: "files",
     };
   }
 
-  window.AgentGateShareKind = { classify: classify, plan: plan };
+  window.AgentGateShareKind = { classify: classify, plan: plan, detectFeatures: detectFeatures };
 })();

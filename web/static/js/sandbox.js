@@ -443,6 +443,49 @@
     return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
   }
 
+  // applyFeatureGates drops elements marked data-agentgate-when="X" unless feature X is
+  // wanted. Built-in renderers get their features from the host (share-kind.js inspects
+  // the decrypted payload); uploaded webapps get them from mentionsFeature below.
+  function applyFeatureGates(doc, wants) {
+    Array.prototype.forEach.call(doc.querySelectorAll("[data-agentgate-when]"), function (el) {
+      if (!wants(el.getAttribute("data-agentgate-when")) && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    });
+  }
+
+  // webappHaystack is every scrap of text in an uploaded bundle that could actually *use*
+  // a library. Two kinds of text are removed first, both of which would otherwise make
+  // gating useless:
+  //
+  //   the gated tags themselves — `<script src="agentgate:mermaid"
+  //     data-agentgate-when="mermaid">` must not be its own evidence that mermaid is used;
+  //   HTML comments — a comment cannot call anything, and a file that documents the
+  //     available libraries (as docs/webapp-template/index.html does) would otherwise
+  //     always appear to use all of them.
+  function webappHaystack(files) {
+    return (files || [])
+      .filter(function (f) {
+        return f.encoding !== "base64";
+      })
+      .map(function (f) {
+        return String(f.content || "");
+      })
+      .join("\n")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<(script|link)\b[^>]*data-agentgate-when[^>]*>(?:<\/script>)?/gi, " ");
+  }
+
+  // mentionsFeature answers "does this bundle actually use X?" by looking for the name as
+  // a whole word anywhere else in the bundle. That is a heuristic, which is exactly why it
+  // is opt-in: an author who writes `data-agentgate-when="mermaid"` is asking for the
+  // library to be dropped when nothing mentions it, and can leave the attribute off to
+  // always get it. Nothing an author requested unconditionally is ever silently removed.
+  function mentionsFeature(haystack, name) {
+    if (!name) return false;
+    return new RegExp("\\b" + name.replace(/[^\w-]/g, "") + "\\b").test(haystack);
+  }
+
   // assembleWebapp builds the document for a payload that carries its own index.html.
   // References resolve from the uploaded files first, then from the agentgate: builtins.
   function assembleWebapp(files, opts) {
@@ -454,6 +497,12 @@
     }
 
     var doc = new DOMParser().parseFromString(entry, "text/html");
+
+    var haystack = webappHaystack(files);
+    applyFeatureGates(doc, function (name) {
+      return mentionsFeature(haystack, name);
+    });
+
     insertCSP(doc, !!opts.allowEval);
 
     function resolve(ref, want) {
@@ -481,14 +530,12 @@
     return fetchServerText(base + "frame.html").then(function (shell) {
       var doc = new DOMParser().parseFromString(shell, "text/html");
 
-      // Drop optional pieces the payload does not need, before anything is fetched.
-      // The doc renderer uses this to leave out the 584 KB React/MDX bundle — and the
-      // 'unsafe-eval' its compiler requires — for plain-Markdown shares.
+      // Drop optional pieces the payload does not need, before anything is fetched. This
+      // is where the big savings are: mermaid alone is 3.3 MB, and a document with no
+      // diagram has no use for it. See detectFeatures in web/static/js/share-kind.js.
       var features = opts.features || {};
-      Array.prototype.forEach.call(doc.querySelectorAll("[data-agentgate-when]"), function (el) {
-        if (!features[el.getAttribute("data-agentgate-when")] && el.parentNode) {
-          el.parentNode.removeChild(el);
-        }
+      applyFeatureGates(doc, function (name) {
+        return !!features[name];
       });
 
       insertCSP(doc, !!opts.allowEval);
@@ -773,6 +820,8 @@
       safeName: safeName,
       safePref: safePref,
       jsonForScriptTag: jsonForScriptTag,
+      webappHaystack: webappHaystack,
+      mentionsFeature: mentionsFeature,
       escapeScriptText: escapeScriptText,
       escapeStyleText: escapeStyleText,
       buildFileMap: buildFileMap,

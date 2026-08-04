@@ -233,6 +233,12 @@ assets, and must serve a `.html` path **literally** rather than redirecting it:
   `wrangler.jsonc` sets `assets.html_handling: "none"` — the default would
   `307` redirect `frame.html` to an extension-less URL.
 
+Which vendored libraries get inlined is decided per share, not per renderer: the shell
+inspects the decrypted payload and drops anything it does not need (a document with no
+diagram never carries mermaid's 3.3 MB). That is a frontend concern with no bearing on
+this contract, but it does mean `/static/vendor/**` must be served on both backends even
+though any single share only fetches a subset of it.
+
 ### Page security headers
 
 Page responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
