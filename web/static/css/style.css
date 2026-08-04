@@ -265,23 +265,7 @@
   color: var(--fg-subtle);
 }
 
-.mobile-only {
-  display: none;
-}
-
-.desktop-only {
-  display: block;
-}
-
 @media (max-width: 768px) {
-  .mobile-only {
-      display: block;
-    }
-  
-  .desktop-only {
-      display: none;
-    }
-  
   .landing-hero h1 {
       font-size: 1.75rem;
     }
@@ -488,12 +472,8 @@
   color: #fff;
 }
 
-.app-viewer {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
+/* .app-frame is the class shell.js gives an uploaded webapp's frame; the definite height
+   it needs comes from .shell-viewer--fixed below. */
 .app-frame {
   flex: 1 1 auto;
   width: 100%;
@@ -508,13 +488,27 @@
 
 /* --- Shell (host chrome around a sandboxed renderer) --- */
 
-/* Unlike .app-viewer, the shell does NOT pin itself to the viewport: the frame grows to
-   its reported content height and the host page provides the single scrollbar, so a
-   document reads as one continuous page instead of a box with a nested scrollbar. */
+/* By default the shell does NOT pin itself to the viewport: the frame grows to its
+   reported content height and the host page provides the single scrollbar, so a document
+   reads as one continuous page instead of a box with a nested scrollbar. */
 .shell-viewer {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+/* Uploaded webapps are the exception. They were authored against a fixed-size viewport
+   and may use vh units or scroll internally, so their frame keeps a definite height
+   rather than growing — without one, a webapp laying out against `flex: 1 1 auto` in an
+   auto-height parent computes to zero and anything measuring its container (a chart,
+   say) renders at 0×0. */
+.shell-viewer--fixed {
+  height: 100vh;
+  min-height: 0;
+}
+
+.shell-viewer--fixed .shell-frame-host {
+  min-height: 0;
 }
 
 .shell-frame-host {
@@ -724,10 +718,6 @@
   background: var(--bg-tertiary);
 }
 
-#agentgate-print-root {
-  display: none;
-}
-
 @media print {
   .settings-trigger,
   .export-trigger,
@@ -735,12 +725,6 @@
   .plan-feedback,
   .passphrase-dialog {
       display: none !important;
-    }
-  
-  #agentgate-print-root,
-  #agentgate-print-root * {
-      overflow: visible !important;
-      max-height: none !important;
     }
   
   @page {

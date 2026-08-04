@@ -8,40 +8,13 @@
   // an opaque origin with connect-src 'none', instead of on the page that holds the
   // decryption key and the remembered passphrase.
   //
-  // Talks to the host only through window.AgentGateFrame (installed by sandbox.js):
-  // reports its height and current file, receives print-scope and deep-link messages.
+  // Talks to the host only through the bridge in renderers/common/frame-ui.js, which also
+  // supplies the find bar, heading ids, and anchor handling shared by every renderer.
+  var UI = window.AgentGateFrameUI;
+  var Frame = UI.frame;
 
-  // sandbox.js installs the bridge at the end of <head>, so it must already exist here.
-  // If it does not, deep links, print-scope switching, and the current-file report all
-  // stop working while height reporting keeps going on its own — a silent partial
-  // failure. Complain loudly instead of degrading quietly.
-  var Frame = window.AgentGateFrame;
-  if (!Frame) {
-    console.error(
-      "AgentGate: host bridge missing — sandbox.js must inject it before renderer scripts."
-    );
-    Frame = {
-      reportHeight: function () {},
-      reportHash: function () {},
-      reportCurrentFile: function () {},
-    };
-  }
-
-  // --- payload ---------------------------------------------------------------------
-
-  function readPayload() {
-    var el = document.getElementById("agentgate-payload");
-    if (!el) return { payload: {}, hash: "" };
-    try {
-      return JSON.parse(el.textContent || "{}");
-    } catch (e) {
-      console.error("Unreadable payload", e);
-      return { payload: {}, hash: "" };
-    }
-  }
-
-  var boot = readPayload();
-  var data = boot.payload || {};
+  var boot = UI.readBoot();
+  var data = boot.payload;
   var files = data.files || [];
 
   // --- entry selection --------------------------------------------------------------
@@ -122,18 +95,10 @@
 
   // --- render pipeline --------------------------------------------------------------
 
-  function escapeHtml(str) {
-    return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   function renderMarkdown(markdown) {
     if (window.AgentGateMarkdown) return window.AgentGateMarkdown.renderMarkdown(markdown || "");
     if (typeof marked !== "undefined") return marked.parse(markdown || "");
-    return "<pre>" + escapeHtml(markdown || "") + "</pre>";
+    return "<pre>" + UI.escapeHtml(markdown || "") + "</pre>";
   }
 
   function attachCodeHighlight(container) {
@@ -142,21 +107,10 @@
     for (var i = 0; i < blocks.length; i++) hljs.highlightElement(blocks[i]);
   }
 
-  function prefersDark() {
-    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  }
-
-  function themeIsDark() {
-    var attr = document.documentElement.getAttribute("data-theme");
-    if (attr === "dark") return true;
-    if (attr === "light") return false;
-    return prefersDark();
-  }
-
   function renderMermaid(container) {
     if (!container || typeof mermaid === "undefined") return;
     try {
-      mermaid.initialize({ startOnLoad: false, theme: themeIsDark() ? "dark" : "default" });
+      mermaid.initialize({ startOnLoad: false, theme: UI.themeIsDark() ? "dark" : "default" });
       var nodes = container.querySelectorAll(".mermaid");
       if (nodes.length) return mermaid.run({ nodes: nodes });
     } catch (e) {
@@ -247,7 +201,7 @@
     promoteMermaidCodeBlocks(node);
     attachCodeHighlight(node);
     renderWireframes(node);
-    assignHeadingIds(node);
+    UI.assignHeadingIds(node);
     return renderMermaid(node);
   }
 
@@ -271,145 +225,10 @@
     return Promise.resolve(finishRenderedContent(node));
   }
 
-  // --- deep links -------------------------------------------------------------------
-
-  function slugify(text) {
-    return String(text || "")
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w一-鿿\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .slice(0, 80);
-  }
-
-  // Headings get stable ids so the host can turn "#some-section" into a scroll position.
-  // The frame cannot own the address bar, so it reports the target back instead.
-  function assignHeadingIds(node) {
-    if (!node) return;
-    var used = {};
-    Array.prototype.forEach.call(node.querySelectorAll("h1, h2, h3, h4"), function (h) {
-      if (h.id) return;
-      var base = slugify(h.textContent);
-      if (!base) return;
-      var id = base;
-      var n = 2;
-      while (used[id] || document.getElementById(id)) id = base + "-" + n++;
-      used[id] = true;
-      h.id = id;
-    });
-  }
-
-  function scrollToHash(hash) {
-    var id = String(hash || "").replace(/^#/, "");
-    if (!id) return;
-    var target = document.getElementById(id);
-    if (target) target.scrollIntoView({ block: "start" });
-  }
-
-  // --- in-frame find ----------------------------------------------------------------
-  // Browsers do search into srcdoc subframes, but only the focused one, which makes
-  // Ctrl+F unreliable here. This is also better than Ctrl+F for the multi-file case: it
-  // reports how many files match, not just the one on screen.
-
-  var findState = { query: "", marks: [], index: 0 };
-
-  function clearFindMarks(root) {
-    Array.prototype.forEach.call(root.querySelectorAll("mark[data-ag-find]"), function (m) {
-      var parent = m.parentNode;
-      if (!parent) return;
-      parent.replaceChild(document.createTextNode(m.textContent || ""), m);
-      parent.normalize();
-    });
-    findState.marks = [];
-  }
-
-  function markMatches(root, query) {
-    if (!query) return [];
-    var marks = [];
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: function (n) {
-        if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-        // Skip generated SVG (mermaid) — rewriting its text nodes breaks the diagram.
-        var p = n.parentElement;
-        while (p && p !== root) {
-          var tag = p.tagName;
-          if (tag === "SVG" || tag === "svg" || tag === "MARK" || tag === "SCRIPT" || tag === "STYLE") {
-            return NodeFilter.FILTER_REJECT;
-          }
-          p = p.parentElement;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-    var targets = [];
-    var node;
-    while ((node = walker.nextNode())) targets.push(node);
-
-    var needle = query.toLowerCase();
-    targets.forEach(function (text) {
-      var value = text.nodeValue;
-      var lower = value.toLowerCase();
-      var at = lower.indexOf(needle);
-      if (at === -1) return;
-      var frag = document.createDocumentFragment();
-      var cursor = 0;
-      while (at !== -1) {
-        if (at > cursor) frag.appendChild(document.createTextNode(value.slice(cursor, at)));
-        var mark = document.createElement("mark");
-        mark.setAttribute("data-ag-find", "1");
-        mark.textContent = value.slice(at, at + query.length);
-        frag.appendChild(mark);
-        marks.push(mark);
-        cursor = at + query.length;
-        at = lower.indexOf(needle, cursor);
-      }
-      if (cursor < value.length) frag.appendChild(document.createTextNode(value.slice(cursor)));
-      if (text.parentNode) text.parentNode.replaceChild(frag, text);
-    });
-    return marks;
-  }
-
-  function focusMatch(delta) {
-    if (!findState.marks.length) return;
-    findState.marks.forEach(function (m) {
-      m.removeAttribute("data-ag-current");
-    });
-    findState.index = (findState.index + delta + findState.marks.length) % findState.marks.length;
-    var current = findState.marks[findState.index];
-    current.setAttribute("data-ag-current", "1");
-    current.scrollIntoView({ block: "center" });
-    updateFindCount();
-  }
-
-  function updateFindCount() {
-    var el = document.getElementById("ag-find-count");
-    if (!el) return;
-    if (!findState.query) {
-      el.textContent = "";
-      return;
-    }
-    if (!findState.marks.length) {
-      el.textContent = "no matches";
-      return;
-    }
-    var suffix = "";
-    if (files.length > 1) {
-      var others = files.filter(function (f) {
-        return (
-          (f.title || "") !== (current.title || "") &&
-          String(f.content || "").toLowerCase().indexOf(findState.query.toLowerCase()) !== -1
-        );
-      }).length;
-      if (others) suffix = " · " + others + " other file" + (others === 1 ? "" : "s");
-    }
-    el.textContent = findState.index + 1 + "/" + findState.marks.length + suffix;
-  }
-
   // --- layout -----------------------------------------------------------------------
 
   var layout = document.getElementById("ag-layout");
   var article = document.getElementById("ag-document");
-  var toolbar = document.getElementById("ag-toolbar");
   var current = pickEntry();
 
   var isVisualPlan = (data.kind || "") === "visual-plan" || (data.kind || "") === "visual-recap";
@@ -455,61 +274,26 @@
     markActiveInSidebar();
     Frame.reportCurrentFile(file.title || "");
     return renderContentInto(article, file.content || "", file).then(function () {
-      if (findState.query) runFind(findState.query);
+      find.refresh();
       Frame.reportHeight();
     });
   }
 
-  function runFind(query) {
-    findState.query = query;
-    clearFindMarks(article);
-    findState.marks = markMatches(article, query);
-    findState.index = 0;
-    if (findState.marks.length) {
-      findState.marks[0].setAttribute("data-ag-current", "1");
-      findState.marks[0].scrollIntoView({ block: "center" });
-    }
-    updateFindCount();
-    Frame.reportHeight();
-  }
-
-  function wireFind() {
-    var input = document.getElementById("ag-find-input");
-    if (!input) return;
-    toolbar.hidden = false;
-    var debounce = null;
-    input.addEventListener("input", function () {
-      clearTimeout(debounce);
-      var value = input.value;
-      debounce = setTimeout(function () {
-        runFind(value);
-      }, 140);
-    });
-    input.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        focusMatch(ev.shiftKey ? -1 : 1);
-      } else if (ev.key === "Escape") {
-        input.value = "";
-        runFind("");
-      }
-    });
-    document.getElementById("ag-find-next").addEventListener("click", function () {
-      focusMatch(1);
-    });
-    document.getElementById("ag-find-prev").addEventListener("click", function () {
-      focusMatch(-1);
-    });
-    // Make the browser shortcut land in this box rather than opening the host's find bar
-    // against a frame it cannot search well.
-    document.addEventListener("keydown", function (ev) {
-      if ((ev.metaKey || ev.ctrlKey) && ev.key === "f") {
-        ev.preventDefault();
-        input.focus();
-        input.select();
-      }
-    });
-  }
+  var find = UI.createFind({
+    root: function () {
+      return article;
+    },
+    // Report how many *other* files in the bundle match, which browser find cannot know.
+    otherMatches: function (query) {
+      var needle = query.toLowerCase();
+      return files.filter(function (f) {
+        return (
+          (f.title || "") !== (current.title || "") &&
+          String(f.content || "").toLowerCase().indexOf(needle) !== -1
+        );
+      }).length;
+    },
+  });
 
   // --- host messages ----------------------------------------------------------------
 
@@ -534,7 +318,7 @@
   };
 
   Frame.onHash = function (hash) {
-    scrollToHash(hash);
+    UI.scrollToHash(hash);
   };
 
   // Re-theme diagrams when the host's theme setting changes; mermaid bakes colours into
@@ -547,20 +331,9 @@
 
   var sidebar = buildSidebar();
   if (sidebar) layout.insertBefore(sidebar, article);
-  wireFind();
-
-  // Anchor clicks inside the document scroll locally and tell the host, which owns the
-  // address bar.
-  article.addEventListener("click", function (ev) {
-    var link = ev.target && ev.target.closest ? ev.target.closest("a[href^='#']") : null;
-    if (!link) return;
-    ev.preventDefault();
-    var hash = link.getAttribute("href");
-    scrollToHash(hash);
-    Frame.reportHash(hash);
-  });
+  UI.wireAnchors(article);
 
   selectFile(current).then(function () {
-    if (boot.hash) scrollToHash(boot.hash);
+    if (boot.hash) UI.scrollToHash(boot.hash);
   });
 })();

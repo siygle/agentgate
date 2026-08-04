@@ -265,6 +265,7 @@
     height: "__agentgate_app_height",
     frameHash: "__agentgate_frame_hash",
     currentFile: "__agentgate_current_file",
+    pref: "__agentgate_pref",
   };
 
   // BRIDGE_SOURCE runs inside the frame. It handles the parts that do not need to know
@@ -284,7 +285,10 @@
     "  var api={onSettings:null,onPrintScope:null,onHash:null,",
     "    reportHeight:function(){send(M.height,h());},",
     "    reportHash:function(v){send(M.frameHash,v);},",
-    "    reportCurrentFile:function(v){send(M.currentFile,v);}};",
+    "    reportCurrentFile:function(v){send(M.currentFile,v);},",
+    // The frame has no localStorage (opaque origin), so a view preference it wants to
+    // remember is handed to the host to persist and replayed on the next load.
+    "    savePref:function(k,v){send(M.pref,{key:k,value:v});}};",
     "  window.AgentGateFrame=api;",
     // Settings are applied here rather than in each renderer: they are only CSS custom
     // properties plus the theme attribute, and tokens.css/renderer.css read them the
@@ -489,12 +493,19 @@
 
       insertCSP(doc, !!opts.allowEval);
 
-      // Renderer-local refs come off the server; builtins keep their aliases. Nothing
-      // resolves against the payload, so `map` is intentionally empty here.
+      // Renderer refs come off the server; builtins keep their aliases. Nothing resolves
+      // against the payload, so `map` is intentionally empty here — a share cannot
+      // substitute its own renderer.js.
+      //
+      // Two spellings: a bare name resolves inside this renderer's own directory, and an
+      // absolute /static/renderers/... path lets renderers share code from common/.
       function resolve(ref, want) {
         if (!ref || /^(https?:|data:|blob:|mailto:|#)/i.test(ref)) return null;
         var builtin = builtinAsset(ref, want);
         if (builtin) return { url: builtin.url, label: ref };
+        if (ref.indexOf("/static/renderers/") === 0) {
+          return { url: ref.replace(/[?#].*$/, "") };
+        }
         return { url: base + normalizeKey(ref) };
       }
 
@@ -509,6 +520,10 @@
           payload: payload,
           settings: opts.settings || null,
           hash: opts.hash || "",
+          // Renderer-scoped view preferences (e.g. the diff's split/unified choice).
+          // The frame is opaque-origin and has no localStorage, so the host stores them
+          // and hands them over here; the frame asks for a write via the "pref" message.
+          prefs: opts.prefs || {},
         });
         var head = doc.head || doc.documentElement;
         head.appendChild(json);
@@ -555,6 +570,18 @@
     return s.length > 512 ? "" : s;
   }
 
+  // safePref bounds a preference the frame asks the host to persist. The key becomes part
+  // of a localStorage key, so it is restricted to a plain identifier — a frame must not be
+  // able to pick the storage slot and overwrite, say, a remembered passphrase.
+  function safePref(value) {
+    if (!value || typeof value !== "object") return null;
+    var key = String(value.key == null ? "" : value.key);
+    var val = String(value.value == null ? "" : value.value);
+    if (!/^[a-z0-9][a-z0-9-]{0,40}$/i.test(key)) return null;
+    if (val.length > 256) return null;
+    return { key: key, value: val };
+  }
+
   // ---------------------------------------------------------------------------
   // Mounting
   // ---------------------------------------------------------------------------
@@ -580,10 +607,16 @@
     container.appendChild(frame);
 
     var lastHeight = 0;
-    var handlers = { ready: [], height: [], hash: [], currentFile: [] };
+    // Every event a caller can subscribe to must be listed here — on() ignores unknown
+    // names, so a missing entry makes the subscription silently do nothing.
+    var handlers = { ready: [], height: [], hash: [], currentFile: [], pref: [] };
 
     function on(name, fn) {
-      if (handlers[name]) handlers[name].push(fn);
+      if (!handlers[name]) {
+        console.error("AgentGate: no such sandbox event", name);
+        return;
+      }
+      handlers[name].push(fn);
     }
     function emit(name, value) {
       (handlers[name] || []).forEach(function (fn) {
@@ -623,6 +656,10 @@
       if (d.type === MSG.ready) return emit("ready");
       if (d.type === MSG.frameHash) return emit("hash", safeFragment(d.value));
       if (d.type === MSG.currentFile) return emit("currentFile", safeName(d.value));
+      if (d.type === MSG.pref) {
+        var pref = safePref(d.value);
+        return pref ? emit("pref", pref) : undefined;
+      }
     }
 
     function applyHeight(value) {
@@ -734,6 +771,7 @@
       clampHeight: clampHeight,
       safeFragment: safeFragment,
       safeName: safeName,
+      safePref: safePref,
       jsonForScriptTag: jsonForScriptTag,
       escapeScriptText: escapeScriptText,
       escapeStyleText: escapeStyleText,

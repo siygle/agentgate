@@ -1,9 +1,9 @@
 /* ============================================
-   Doc renderer — chrome that belongs INSIDE the frame
+   Renderer chrome that belongs INSIDE the frame
 
-   Styles for this renderer's own controls (the find bar) plus the page-level rules a
-   standalone framed document needs. Shared content styles come from renderer.css and
-   tokens.css, which sandbox.js inlines alongside this file.
+   Shared by every built-in renderer: the find bar, and the page-level rules a standalone
+   framed document needs. Content styles come from renderer.css and tokens.css, which
+   sandbox.js inlines alongside this file.
 
    The frame never scrolls itself: the host grows the iframe to the reported content
    height so the host page owns the only scrollbar, and the document reads as one page
@@ -18,10 +18,18 @@ body {
 
 /* --bg-secondary matches the tint the old .plan-viewer wrapper gave the page, so the
    document looks the same now that the frame *is* the page. */
-body.ag-doc {
+body.ag-frame {
   margin: 0;
   background: var(--bg-secondary);
   color: var(--fg);
+}
+
+/* Page wrapper for renderers that centre their content. `.container` lives in
+   style.css, which is host chrome and is not inlined into the frame. */
+.ag-page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
 }
 
 /* --- Find bar --- */

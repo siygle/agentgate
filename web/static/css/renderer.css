@@ -152,28 +152,56 @@
   padding: 0.25rem 0.75rem;
 }
 
+/* Responsive switch between the files renderer's desktop panel and its mobile accordion.
+   These live here, not in style.css: the only thing that uses them is the files renderer,
+   which runs inside the frame. When they were classified as host chrome the frame had no
+   rule for either class, so BOTH layouts rendered and the document came out roughly twice
+   as long as its content. */
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: block;
+  }
+}
+
+/* These used to pin themselves to the viewport and scroll internally, which suited a
+   viewer that filled the host page. Inside the sandbox the frame grows to its content
+   and the host page owns the only scrollbar, so the content must simply flow — an inner
+   `overflow: auto` here would produce exactly the nested scrollbar the frame is meant to
+   avoid. The sidebar sticks instead, so it stays visible as the host page scrolls. */
 .file-viewer {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 2px);
   border: 1px solid var(--border);
   border-radius: 6px;
-  overflow: hidden;
 }
 
 .file-viewer-body {
   display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  align-items: flex-start;
 }
 
 .file-sidebar {
   width: 16rem;
   flex-shrink: 0;
+  position: sticky;
+  /* Clears the frame's own sticky find bar. */
+  top: 3rem;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
 }
 
 .file-item,
@@ -212,7 +240,6 @@
 .file-content {
   flex: 1;
   min-width: 0;
-  overflow: auto;
 }
 
 .file-header-bar {

@@ -8,12 +8,17 @@
 
   // Route prefix -> API kind. Diff shares are /p/ (kind "diff"); everything else
   // (files, webapp, plan, docs) is stored as a file bundle (kind "files").
+  //
+  // /s/ is the route new shares use and says nothing about the kind, so it resolves
+  // through the kind-agnostic GET /api/share/{id}. The five older prefixes are kept
+  // forever — a --no-expiry link handed out long ago must keep working — and they still
+  // name their kind, so they skip that lookup and hit the exact endpoint directly.
   var ROUTE_KIND = { p: "diff", f: "files", app: "files", plan: "files", d: "files" };
 
   function parseRoute() {
-    var m = (location.pathname || "").match(/^\/(p|f|app|plan|d)\/([^\/?#]+)/);
+    var m = (location.pathname || "").match(/^\/(s|p|f|app|plan|d)\/([^\/?#]+)/);
     if (!m) return null;
-    return { view: m[1], id: decodeURIComponent(m[2]), kind: ROUTE_KIND[m[1]] };
+    return { view: m[1], id: decodeURIComponent(m[2]), kind: ROUTE_KIND[m[1]] || "" };
   }
 
   var route = parseRoute();
@@ -27,7 +32,7 @@
       promise = Promise.resolve(state);
       return promise;
     }
-    var url = "/api/" + route.kind + "/" + encodeURIComponent(route.id);
+    var url = "/api/" + (route.kind || "share") + "/" + encodeURIComponent(route.id);
     promise = fetch(url, { headers: { Accept: "application/json" } })
       .then(function (resp) {
         if (resp.status === 404) {

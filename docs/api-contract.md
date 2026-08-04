@@ -39,7 +39,7 @@ Create an encrypted share. Body:
 
 ```jsonc
 { "success": true, "data": {
-  "preview_url": "<base>/p/ABC123" | "<base>/f/ABC123",
+  "preview_url": "<base>/s/ABC123",
   "manage_url":  "<preview_url>#owner=<owner_token>",
   "id": "ABC123",
   "owner_token": "<returned once; server stores only its SHA-256 hex hash>"
@@ -84,8 +84,23 @@ Body: `{ "never_expires": true | false }` (required).
     the server resets `expired_at` to `now + 7d` and returns the new `expires_at`.
 - `400` missing/invalid body, `401` missing/invalid bearer token, `404` not found.
 
-`kind` mapping: diff shares live under `/p/{id}` and `/api/diff/{id}`; everything else
-(files, webapp, plan, docs) lives under `/f|/app|/plan|/d/{id}` and `/api/files/{id}`.
+### `GET /api/share/{id}`
+
+Kind-agnostic lookup, backing the unified `/s/{id}` page route. Returns exactly the same
+shape as `GET /api/{kind}/{id}`, including the `kind` field, so a caller that does not
+know whether an id is a diff or a file bundle can resolve it in one request.
+
+Resolution order is **`file_bundles` first, then `diffs`**. The two tables have
+independently generated ids (6 characters over a 32-character alphabet, ~1.07e9 values),
+so a cross-table collision is possible in principle and would make `/s/{id}` ambiguous.
+Both backends must use the same order. Anyone affected still has an exact URL, because
+`/p/{id}` and `/f/{id}` are kept forever and name their kind.
+
+- `404` when the id exists in neither table, or the record it names is expired.
+
+`kind` mapping: diff shares are stored in `diffs` and read via `/api/diff/{id}`;
+everything else (files, webapp, plan, docs) is a file bundle read via `/api/files/{id}`.
+Both are viewed at `/s/{id}`.
 
 ## Owner dashboard (instance-admin) endpoints
 
@@ -193,10 +208,16 @@ unknown kind/id. Origin-checked.
 
 ## Page routes (Plan B: static HTML + fetch)
 
-`/`, `/p/{id}`, `/f/{id}`, `/app/{id}`, `/plan/{id}`, `/d/{id}` (GET + HEAD) return a
-**static HTML shell** (no server-side content injection). The shell's client JS derives
-`kind`+`id` from the path, calls the matching `GET /api/…/{id}`, and renders after the
-viewer decrypts. Missing/expired shares therefore return `200` for the shell and `404`
+`/s/{id}` is the route new shares are created at. The five kind-specific prefixes
+`/p/{id}`, `/f/{id}`, `/app/{id}`, `/plan/{id}`, `/d/{id}` are **permanent aliases** — a
+share can be created with `never_expires`, so a link handed out years ago must keep
+resolving — and all six serve the **same** static HTML shell (GET + HEAD, no server-side
+content injection).
+
+The shell's client JS derives the id from the path. The five older prefixes still name a
+kind, so they call `GET /api/{kind}/{id}` directly; `/s/` calls `GET /api/share/{id}`
+instead. After decrypting, the shell picks a renderer from the payload rather than from
+the URL, so the same share renders identically through any of its URLs. Missing/expired shares therefore return `200` for the shell and `404`
 from the API (the page then renders a not-found state) — a deliberate change from the
 old server-rendered `404` page.
 
@@ -211,6 +232,22 @@ assets, and must serve a `.html` path **literally** rather than redirecting it:
 - Worker: `sync-assets` copies `renderers/` into `public/static/`, and
   `wrangler.jsonc` sets `assets.html_handling: "none"` — the default would
   `307` redirect `frame.html` to an extension-less URL.
+
+### Page security headers
+
+Page responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+and a `Content-Security-Policy`. Both backends must send the **same two policies**:
+
+- **Strict** (`/`, `/admin`): `script-src 'self'`. Neither page embeds the render
+  sandbox and neither contains an inline script.
+- **Share shell** (`/s/`, and the five aliases): `script-src 'self' 'unsafe-inline'
+  'unsafe-eval'`. A `srcdoc` iframe **inherits its parent's CSP** and the effective
+  policy is the intersection of the two — the sandbox is assembled entirely from inline
+  scripts, and MDX compilation needs `eval`. A stricter policy here silently breaks
+  every share.
+
+Both keep `connect-src 'self'` and `frame-ancestors 'none'`, and neither permits a
+third-party script origin.
 
 ## CORS
 

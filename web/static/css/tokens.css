@@ -196,20 +196,17 @@ a:hover {
 }
 
 @media print {
-  body.agentgate-printing #app {
-      display: none !important;
-    }
-  
-  body.agentgate-printing #agentgate-print-root {
-      display: block;
-    }
-  
-  body.agentgate-printing-app .app-viewer {
+  /* Printing expands the sandboxed frame to its full content height (see
+     printFullHeight in sandbox.js) so the PDF paginates instead of clipping to one
+     page. These undo the on-screen sizing that would otherwise fight it. */
+  body.agentgate-printing-app .shell-viewer {
       height: auto !important;
+      min-height: 0 !important;
       display: block !important;
     }
   
-  body.agentgate-printing-app .app-frame {
+  body.agentgate-printing-app .app-frame,
+  body.agentgate-printing-app .shell-frame {
       flex: none !important;
       width: 100% !important;
     }

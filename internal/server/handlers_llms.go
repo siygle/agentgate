@@ -32,7 +32,7 @@ AgentGate encrypts code diffs and files client-side before uploading. The server
 ## API
 
 - [POST /api/diff](%s/llms-full.txt): Create an encrypted diff — send JSON with encrypted_data containing ciphertext, iv, and salt
-- [POST /api/files](%s/llms-full.txt): Create an encrypted file bundle — same format, preview URL uses /f/ prefix
+- [POST /api/files](%s/llms-full.txt): Create an encrypted file bundle — same format; every share previews at /s/<id>
 
 ## Optional
 
@@ -103,7 +103,7 @@ Response (201 Created):
 {
   "success": true,
   "data": {
-    "preview_url": "%s/p/<id>",
+    "preview_url": "%s/s/<id>",
     "id": "<id>"
   }
 }
@@ -111,7 +111,19 @@ Response (201 Created):
 
 ### POST /api/files
 
-Create an encrypted file bundle. Same request/response format as POST /api/diff. The preview URL uses ` + "`/f/<id>`" + ` instead of ` + "`/p/<id>`" + `.
+Create an encrypted file bundle. Same request/response format as POST /api/diff.
+
+### Share URLs
+
+Every share previews at ` + "`/s/<id>`" + ` regardless of kind — the viewer picks how to render
+it from the decrypted payload. The older kind-specific links (` + "`/p/`" + `, ` + "`/f/`" + `, ` + "`/app/`" + `,
+` + "`/plan/`" + `, ` + "`/d/`" + `) still resolve and always will, so any URL previously handed out keeps
+working; they are simply no longer issued.
+
+### GET /api/share/<id>
+
+Resolves a share without knowing its kind (this is what ` + "`/s/<id>`" + ` uses). Same response as
+GET /api/diff/<id> or GET /api/files/<id>, including the ` + "`kind`" + ` field.
 
 ## Built-in webapp assets
 

@@ -168,10 +168,33 @@
 
   // --- main ---------------------------------------------------------------------------
 
-  // render mounts a built-in renderer for a decrypted payload.
+  // prefKey namespaces a renderer view preference the frame asked the host to remember
+  // (e.g. the diff's split/unified choice). Per renderer, not per share: the choice is
+  // about how you like to read, not about this particular diff.
+  function prefKey(renderer, key) {
+    return "agentgate-pref:" + renderer + ":" + key;
+  }
+
+  function loadPrefs(renderer) {
+    var out = {};
+    try {
+      var prefix = prefKey(renderer, "");
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(prefix) === 0) out[k.slice(prefix.length)] = localStorage.getItem(k);
+      }
+    } catch (e) {
+      // private mode: no stored preferences, defaults apply
+    }
+    return out;
+  }
+
+  // render mounts share content: either a built-in renderer, or the bundle's own
+  // index.html when config.webapp is set.
   //
   // config:
-  //   renderer   name of the directory under /static/renderers/
+  //   renderer   name of the directory under /static/renderers/ (omit for webapp)
+  //   webapp     true to run the payload's own index.html instead
   //   label      header text describing the share
   //   title      display title, also the export filename base
   //   features   optional renderer features to enable (e.g. { mdx: true })
@@ -190,7 +213,9 @@
     var files = data.files || [];
     var shareId = window.AgentGateShare ? window.AgentGateShare.getShareId() : "unknown";
 
-    var viewer = el("div", "shell-viewer");
+    // An uploaded webapp keeps a viewport-height frame (see .shell-viewer--fixed);
+    // built-in renderers grow to their content instead.
+    var viewer = el("div", "shell-viewer" + (config.webapp ? " shell-viewer--fixed" : ""));
     var headerEl = el("header", "file-viewer-header");
     var headerLeft = row();
     var headerRight = row();
@@ -222,20 +247,42 @@
 
     var Settings = window.AgentGateSettings;
 
-    Sandbox.assembleRenderer(config.renderer, data, {
-      features: config.features || {},
-      allowEval: !!config.allowEval,
-      settings: Settings ? Settings.describe() : null,
-      hash: location.hash || "",
-    })
+    // An uploaded webapp brings its own document; a built-in renderer is fetched from the
+    // server and handed the payload as inert JSON.
+    var assembled = config.webapp
+      ? Sandbox.assembleWebapp(files, { allowEval: !!config.allowEval })
+      : Sandbox.assembleRenderer(config.renderer, data, {
+          features: config.features || {},
+          allowEval: !!config.allowEval,
+          settings: Settings ? Settings.describe() : null,
+          hash: location.hash || "",
+          prefs: loadPrefs(config.renderer),
+        });
+
+    assembled
       .then(function (result) {
         if (loading.parentNode) loading.parentNode.removeChild(loading);
 
-        // autoHeight: the frame reports its content height and grows to fit, so the host
-        // page owns the only scrollbar and the document reads as one page.
+        if (result.error) {
+          frameHost.appendChild(el("div", "app-error", result.error));
+          return;
+        }
+
+        // autoHeight grows the frame to its reported content height so the host page owns
+        // the only scrollbar. Off for uploaded webapps: they were authored against a
+        // fixed-size viewport and may use vh units or scroll internally, so growing the
+        // frame could change how existing shares look.
         var handle = Sandbox.mount(frameHost, result.html, {
-          className: "shell-frame",
-          autoHeight: true,
+          className: config.webapp ? "app-frame" : "shell-frame",
+          autoHeight: !config.webapp,
+        });
+
+        handle.on("pref", function (pref) {
+          try {
+            localStorage.setItem(prefKey(config.renderer, pref.key), pref.value);
+          } catch (e) {
+            // private mode: the choice just will not persist
+          }
         });
 
         var currentFile = files.length ? files[0].title : config.title;

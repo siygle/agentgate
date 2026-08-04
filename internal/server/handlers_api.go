@@ -221,6 +221,77 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, kind string) 
 	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
+// handleGetShare resolves a share by id without the caller knowing its kind, backing the
+// unified /s/{id} page route. Diffs and file bundles live in separate tables with
+// independently generated ids, so this looks in both.
+//
+// Resolution order is file_bundles first, then diffs. A cross-table id collision is
+// possible in principle (6 characters over a 32-character alphabet, ~1.07e9 ids), and
+// would make /s/{id} ambiguous — but /p/{id} and /f/{id} are kept forever and stay
+// unambiguous, so anyone affected still has an exact URL. Documented in
+// docs/api-contract.md.
+func (s *Server) handleGetShare(w http.ResponseWriter, r *http.Request) {
+	recordID := chi.URLParam(r, "id")
+
+	fb, err := db.GetFileBundle(s.db, recordID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if fb != nil {
+		s.writeShare(w, recordID, "files", fb.EncryptedData, fb.BlobKey, fb.ExpiredAt, fb.NeverExpires)
+		return
+	}
+
+	d, err := db.GetDiff(s.db, recordID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+		return
+	}
+	if d != nil {
+		s.writeShare(w, recordID, "diff", d.EncryptedData, d.BlobKey, d.ExpiredAt, d.NeverExpires)
+		return
+	}
+
+	writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+}
+
+// writeShare emits the shared GET response for a resolved record, applying the same
+// expiry and blob rules as handleGet.
+func (s *Server) writeShare(w http.ResponseWriter, recordID, kind, encData, blobKey string, expiredAt time.Time, neverExpires bool) {
+	if !neverExpires && expiredAt.Before(time.Now().UTC()) {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+		return
+	}
+	if blobKey != "" {
+		if !s.blobs.Enabled() {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "blob storage not configured for this record"})
+			return
+		}
+		blob, err := s.blobs.Get(blobKey)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Error: "not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Error: "internal server error"})
+			}
+			return
+		}
+		encData = blob
+	}
+
+	data := getResponseData{
+		EncryptedData: json.RawMessage(encData),
+		NeverExpires:  neverExpires,
+		ID:            recordID,
+		Kind:          kind,
+	}
+	if !neverExpires {
+		data.ExpiresAt = expiredAt.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Data: data})
+}
+
 // handleCreateDiff creates an encrypted diff record.
 func (s *Server) handleCreateDiff(w http.ResponseWriter, r *http.Request) {
 	s.handleCreate(w, r, "diff")
@@ -281,15 +352,12 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 		return
 	}
 
-	var pathPrefix string
 	var createErr error
 	switch kind {
 	case "diff":
 		createErr = db.CreateDiff(s.db, newID, inlineData, blobKey, expiry, req.NeverExpires, ownerHash)
-		pathPrefix = "/p/"
 	case "files":
 		createErr = db.CreateFileBundle(s.db, newID, inlineData, blobKey, expiry, req.NeverExpires, ownerHash)
-		pathPrefix = "/f/"
 	}
 	if createErr != nil {
 		// Roll back the orphaned blob so the two stores stay in sync.
@@ -300,7 +368,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request, kind strin
 		return
 	}
 
-	previewURL := s.baseURL + pathPrefix + newID
+	previewURL := s.baseURL + sharePath + newID
 	writeJSON(w, http.StatusCreated, apiResponse{
 		Success: true,
 		Data: createResponseData{
@@ -594,3 +662,8 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
+
+// sharePath is the single page route every new share previews at. The kind-specific
+// prefixes (/p/, /f/, /app/, /plan/, /d/) still resolve — shares can be permanent, so
+// links already handed out must keep working — but they are no longer minted.
+const sharePath = "/s/"
