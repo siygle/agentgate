@@ -7,7 +7,7 @@ Single binary, SQLite storage, zero external dependencies. All content is encryp
 ## How it works
 
 1. **Encrypt locally** — diffs and files are encrypted with AES-256-GCM on your machine before upload. The server never sees plaintext.
-2. **Share a link** — get a URL like `your-server.com/p/ABC123`. Recipients need the passphrase to decrypt.
+2. **Share a link** — get a URL like `your-server.com/s/ABC123`. Recipients need the passphrase to decrypt.
 3. **Auto-expiry** — all content expires after 7 days by default; upload commands can override TTL.
 4. **Owner controls** — every new upload also returns a private Manage URL with an owner token. Open it to toggle whether a share should be kept indefinitely.
 
@@ -134,25 +134,41 @@ TTL:
 After upload, return the public Preview/Docs/Plan/App URL to the user. Do not expose the passphrase in chat; share it out-of-band if needed.
 ```
 
-### Built-in TradingView Lightweight Charts for webapps
+### Built-in libraries for webapps
 
-AgentGate webapps run in an offline sandbox. To avoid bundling a large charting
-library into every encrypted upload, the app viewer provides a built-in vendored
-copy of TradingView Lightweight Charts. Reference it from your uploaded
-`index.html` with either alias below; AgentGate will inline it into the sandboxed
-iframe before rendering:
+AgentGate webapps run in a sandboxed iframe with `connect-src 'none'` — the framed app
+**cannot make any network request**, so every library it uses has to be present locally.
+Instead of bundling megabytes into each encrypted upload, reference a built-in library
+with an `agentgate:` URL. The app viewer inlines the server's own vendored copy into the
+sandbox before rendering, so it costs nothing in the payload.
+
+| Reference | Global | Library |
+|-----------|--------|---------|
+| `agentgate:marked` | `marked` | Markdown rendering |
+| `agentgate:highlight` | `hljs` | Syntax highlighting |
+| `agentgate:mermaid` | `mermaid` | Diagrams (flowchart, sequence, ER, …) |
+| `agentgate:diff2html` | `Diff2Html` | Unified-diff rendering |
+| `agentgate:lightweight-charts` | `LightweightCharts` | TradingView financial charts |
+
+Stylesheets work the same way through `<link rel="stylesheet">`:
+
+| Reference | Pairs with |
+|-----------|-----------|
+| `agentgate:highlight-css` | `agentgate:highlight` (light theme) |
+| `agentgate:highlight-dark-css` | `agentgate:highlight` (dark theme) |
+| `agentgate:diff2html-css` | `agentgate:diff2html` |
+| `agentgate:tokens` | AgentGate's design tokens (colours, fonts, light/dark) |
+| `agentgate:renderer` | AgentGate's content styles (`.markdown-body`, tables, code blocks) |
 
 ```html
+<link rel="stylesheet" href="agentgate:highlight-css">
+<script src="agentgate:marked"></script>
+<script src="agentgate:highlight"></script>
 <script src="agentgate:lightweight-charts"></script>
-<!-- or -->
-<script src="agentgate://vendor/lightweight-charts.js"></script>
-```
 
-Then use the normal global API inside the webapp:
-
-```html
 <div id="chart" style="height: 420px"></div>
 <script>
+  document.body.insertAdjacentHTML("afterbegin", marked.parse("# Report"));
   const chart = LightweightCharts.createChart(document.getElementById("chart"));
   const candles = chart.addSeries(LightweightCharts.CandlestickSeries, {});
   candles.setData([
@@ -162,8 +178,42 @@ Then use the normal global API inside the webapp:
 </script>
 ```
 
-This keeps financial-chart reports smaller and avoids the layout issues caused by
-hand-drawn SVG charts on mobile.
+Each reference also accepts the longer spellings `agentgate://vendor/<name>.js` and
+`/static/vendor/<real-filename>`. Anything not listed above is left alone: a
+bundle-local path resolves from your uploaded files, and a remote URL stays remote —
+which means the sandbox blocks it.
+
+#### Only pay for what you use
+
+A built-in is inlined into the frame at view time, so a large one costs the reader
+download and parse time on every view — mermaid alone is 3.3 MB. Add
+`data-agentgate-when="<global>"` and it is dropped unless something else in your bundle
+mentions that global by name:
+
+```html
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+```
+
+It is opt-in and never silently removes a library you asked for unconditionally: leave
+the attribute off and the library is always inlined. Mentions inside HTML comments do not
+count, and neither does the gated tag itself. The upshot is that deleting a feature from a
+copy of the template stops that feature's library being shipped too.
+
+AgentGate's own renderers do the same thing automatically — a document with no diagram
+never loads mermaid, one with no code never loads highlight.js — see `detectFeatures` in
+[`web/static/js/share-kind.js`](web/static/js/share-kind.js).
+
+A ready-to-upload starting point lives in [`docs/webapp-template/`](docs/webapp-template/)
+(markdown + diagram + chart, no network):
+
+```bash
+agentgate webapp ./docs/webapp-template
+```
+
+The vendored files and their pinned versions are listed in
+[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md). They are committed
+rather than loaded from a CDN because the viewer page holds the decryption key and the
+remembered passphrase — third-party JS on that origin could read both.
 
 For pi, one possible location is `~/.pi/agent/skills/agentgate-share/SKILL.md`. Other agents can use the same text as a tool instruction or custom skill.
 
@@ -216,14 +266,19 @@ Limitations (this is for sharing runnable prototypes, not hosting a site):
 - **Must be self-contained.** The framed app runs under a strict Content-Security-Policy (`default-src 'none'; connect-src 'none'; …`) so it **cannot make any network requests** — no `fetch`, XHR, WebSocket, or external images/fonts/scripts. Bundle everything you need; a webapp that relies on calling an external API will not work. This keeps decrypted content from being exfiltrated off the viewer page.
 - **Bundle size.** Binary assets grow the encrypted payload. The CLI warns past a ~1 MB soft budget, and the server enforces a hard limit (Cloudflare D1-only mode ~2 MB per share; raise it with R2 on the Worker, or `AGENTGATE_MAX_UPLOAD_BYTES` on self-host). Oversized uploads are rejected with HTTP 413.
 - **Opaque origin.** The iframe runs without `allow-same-origin`, so `localStorage` and cookies are unavailable to the app by design.
-- The same record is also viewable as a plain file bundle at `/f/{id}`, and the Manage URL controls retention for both views.
+- **A webapp is recognised by its contents, not its URL.** A bundle with `index.html` at the root runs as a webapp at any of its links; one without renders as a plain file bundle. The Manage URL controls retention either way.
 
 Successful uploads print both a public Preview URL and, on supported servers, a private Manage URL:
 
 ```text
-Preview URL: https://your-domain.com/f/ABC123
-Manage URL:  https://your-domain.com/f/ABC123#owner=<owner-token>
+Preview URL: https://your-domain.com/s/ABC123
+Manage URL:  https://your-domain.com/s/ABC123#owner=<owner-token>
 ```
+
+Every kind of share previews at `/s/{id}` — the viewer picks how to render it from the
+decrypted payload. The older kind-specific links (`/p/`, `/f/`, `/app/`, `/plan/`, `/d/`)
+still resolve and always will, so any link already handed out keeps working; they are
+simply no longer issued.
 
 Keep the Manage URL private. Anyone with this URL can toggle indefinite retention for that share.
 
@@ -243,7 +298,7 @@ If the server returns a `localhost`/`127.0.0.1` link (because its `--base-url` w
 AgentGate creates an owner token for each new share and stores only its SHA-256 hash server-side. The token is returned once as part of the Manage URL fragment:
 
 ```text
-https://your-domain.com/f/ABC123#owner=<owner-token>
+https://your-domain.com/s/ABC123#owner=<owner-token>
 ```
 
 When this URL is opened in the browser, the page shows a **永久保留** toggle. Turning it on sets the share to never expire; turning it off restores normal expiration. If the previous deadline is already in the past, the server resets expiration to the default 7 days.
@@ -502,7 +557,44 @@ Two interchangeable backends behind one shared HTTP API and frontend:
 - **Self-host server** — Go, Chi router, SQLite (pure Go, no CGO), embedded static assets
 - **Cloudflare Worker** — TypeScript, Hono, D1 (optional R2 for blobs via `USE_R2`), Cron Trigger cleanup
 - **CLI** — Go, cross-compiled to single binaries (unchanged across both backends)
-- **Frontend** — Vanilla JS, diff2html, highlight.js, marked.js; pages fetch ciphertext via the JSON API
+- **Frontend** — Vanilla JS; pages fetch ciphertext via the JSON API and decrypt in the browser
+
+### How share content is rendered
+
+Every share — diff, files, documents, visual plan, uploaded webapp — is viewed at
+`/s/{id}` and rendered the same way.
+
+The page you open holds the decryption key, your remembered passphrase, and — if you are
+the operator — an admin session cookie. So it does not interpret share content at all.
+It decrypts, then hands the result to `web/static/js/sandbox.js`, which assembles a
+self-contained document and runs it in an **opaque-origin `<iframe srcdoc>`** under
+`default-src 'none'; connect-src 'none'`. Framed content cannot reach the host page's
+DOM or storage, and cannot make a network request of any kind.
+
+Two things run in that frame:
+
+- **Built-in renderers** in `web/static/renderers/`: `diff`, `files`, and `doc`
+  (documents and visual plans — markdown, MDX, mermaid, wireframes), sharing the find
+  bar and host bridge in `common/`. Their scripts are resolved from the server, never
+  from the payload, so a share cannot substitute its own `renderer.js`.
+- **Uploaded webapps** (`agentgate webapp`), which supply their own `index.html`.
+
+`web/static/js/share-kind.js` picks between them from the decrypted payload, so the URL
+does not decide how something renders. The older `/p/ /f/ /app/ /plan/ /d/` links are
+kept as permanent aliases — a `--no-expiry` share must keep resolving forever — and open
+the same shell.
+
+Everything outside the frame — header, expiry badge, owner toggle, display settings,
+export, review notes, the address bar — is host chrome in `web/static/js/shell.js`. The
+two sides talk over a small `postMessage` bridge: the frame reports its content height
+(so the host grows the iframe and the page keeps a single scrollbar) and its current
+file and scroll anchor; the host sends display settings, deep links, and print scope.
+Values coming *from* the frame are treated as untrusted and sanitised before use.
+
+Rendering libraries are vendored rather than loaded from a CDN, and inlined into the
+frame on demand via `agentgate:` references — see
+[`web/static/vendor/VERSIONS.md`](web/static/vendor/VERSIONS.md) for why and for the
+pinned versions.
 
 ## Project structure
 
@@ -515,10 +607,22 @@ internal/db/       SQLite database layer
 internal/crypto/   AES-256-GCM encryption (CLI)
 internal/id/       ID generation
 internal/cleanup/  Expired content cleanup (goroutine)
-web/static/        Shared frontend: CSS, JS, vendor libs, static view shells (views/)
+web/static/        Shared frontend (single source of truth for both backends)
+  css/tokens.css     Design tokens + reset — used by host chrome AND the sandbox
+  css/style.css      Host chrome only (never styles share content)
+  css/renderer.css   Share-content styles, inlined into the sandbox
+  js/sandbox.js      Assembles + runs share content in the opaque-origin iframe
+  js/shell.js        Host chrome around a sandboxed renderer
+  js/share-kind.js   Picks a renderer from the decrypted payload
+  renderers/common/  Bridge + find bar shared by the renderers
+  renderers/{diff,files,doc}/  Built-in renderers
+  vendor/            Pinned third-party libs (see vendor/VERSIONS.md)
+  views/             share.html (all share routes) + admin.html
+tools/mdx-bundle/  Builds vendor/mdx-runtime.bundle.js (run only on version bumps)
 worker/            Cloudflare Worker (TypeScript + Hono, D1 + R2)
 test/contract/     HTTP contract test run against both backends
 docs/api-contract.md  Shared API contract (single source of truth)
+docs/webapp-template/ Ready-to-upload starting point for `agentgate webapp`
 ```
 
 ## Prebuilt binaries

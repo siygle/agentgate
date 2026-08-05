@@ -1,9 +1,14 @@
 // Copies the shared frontend (../web/static) into ./public with the URL layout
 // Workers Static Assets expects:
 //   ../web/static/index.html   -> public/index.html          (served at /)
-//   ../web/static/{css,js,vendor} -> public/static/*         (served at /static/*)
+//   ../web/static/{css,js,vendor,renderers} -> public/static/*  (served at /static/*)
 //   ../web/static/views/*      -> public/views/*             (served by the Worker for /p /f /app /plan /d)
 // web/static remains the single source of truth shared with the Go self-host server.
+//
+// `renderers` matters as much as the rest: sandbox.js fetches
+// /static/renderers/<name>/index.html to build the sandboxed document, so leaving it out
+// breaks every document and plan share on the Worker while the Go build keeps working
+// (its embed.FS takes all of web/static).
 import { cpSync, rmSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -16,7 +21,7 @@ const out = join(workerRoot, "public");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(join(out, "static"), { recursive: true });
 
-for (const dir of ["css", "js", "vendor"]) {
+for (const dir of ["css", "js", "vendor", "renderers"]) {
   cpSync(join(src, dir), join(out, "static", dir), { recursive: true });
 }
 cpSync(join(src, "views"), join(out, "views"), { recursive: true });

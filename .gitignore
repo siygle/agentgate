@@ -4,6 +4,10 @@ bin/
 /server
 /agentgate
 
+# Node dependencies (tools/mdx-bundle; worker/ has its own ignore file too).
+# The vendored bundle these produce IS committed — only the deps are ignored.
+node_modules/
+
 # Database
 *.db
 *.db-shm

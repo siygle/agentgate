@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Share - AgentGate</title>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <!--
+    The one share shell. Serves /s/{id} and the five legacy prefixes (/p /f /app /plan /d),
+    which stay forever because a --no-expiry link handed out long ago must keep resolving.
+
+    This page decrypts and then does nothing with the content. Diffs, documents, plans,
+    file bundles, and uploaded webapps are all rendered by /static/renderers/ (or by the
+    bundle's own index.html) inside an opaque-origin iframe with connect-src 'none'.
+    That is deliberate: this origin holds the decryption key, the remembered passphrase,
+    and possibly an admin session cookie, so it loads no markdown, highlighting, diff, or
+    React library at all.
+  -->
+  <script src="/static/js/crypto.js"></script>
+  <script src="/static/js/share-loader.js"></script>
+  <script src="/static/js/passphrase.js"></script>
+  <script src="/static/js/settings.js"></script>
+  <script src="/static/js/export.js"></script>
+  <script src="/static/js/expiry-controls.js"></script>
+  <script src="/static/js/sandbox.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/share-kind.js"></script>
+  <script src="/static/js/share-boot.js"></script>
+</body>
+</html>

@@ -69,23 +69,32 @@ func New(db *sql.DB, baseURL string, staticFS fs.FS, blobs *blobstore.Store, adm
 		r.Get("/", s.handleIndex)
 		r.Get("/llms.txt", s.handleLLMsTxt)
 		r.Get("/llms-full.txt", s.handleLLMsFullTxt)
-		r.Get("/p/{id}", s.handleViewDiff)
-		r.Get("/f/{id}", s.handleViewFiles)
-		r.Get("/app/{id}", s.handleViewApp)
-		r.Get("/plan/{id}", s.handleViewPlan)
-		r.Get("/d/{id}", s.handleViewDocs)
+		// /s/{id} is the route new shares use; the five kind-specific prefixes are
+		// permanent aliases, because a --no-expiry link handed out years ago must keep
+		// resolving. Every one of them serves the same shell, which picks a renderer
+		// from the decrypted payload.
+		r.Get("/s/{id}", s.handleViewShare)
+		r.Get("/p/{id}", s.handleViewShare)
+		r.Get("/f/{id}", s.handleViewShare)
+		r.Get("/app/{id}", s.handleViewShare)
+		r.Get("/plan/{id}", s.handleViewShare)
+		r.Get("/d/{id}", s.handleViewShare)
 		// Some chat/mobile clients probe shared URLs with HEAD before opening them.
-		r.Head("/p/{id}", s.handleViewDiff)
-		r.Head("/f/{id}", s.handleViewFiles)
-		r.Head("/app/{id}", s.handleViewApp)
-		r.Head("/plan/{id}", s.handleViewPlan)
-		r.Head("/d/{id}", s.handleViewDocs)
+		r.Head("/s/{id}", s.handleViewShare)
+		r.Head("/p/{id}", s.handleViewShare)
+		r.Head("/f/{id}", s.handleViewShare)
+		r.Head("/app/{id}", s.handleViewShare)
+		r.Head("/plan/{id}", s.handleViewShare)
+		r.Head("/d/{id}", s.handleViewShare)
 
 		// Share API
 		r.Post("/api/diff", s.handleCreateDiff)
 		r.Post("/api/files", s.handleCreateFiles)
 		r.Get("/api/diff/{id}", s.handleGetDiff)
 		r.Get("/api/files/{id}", s.handleGetFiles)
+		// Kind-agnostic lookup, so the /s/{id} shell can fetch without knowing which
+		// table the id lives in.
+		r.Get("/api/share/{id}", s.handleGetShare)
 		r.Patch("/api/diff/{id}", s.handleUpdateDiff)
 		r.Patch("/api/files/{id}", s.handleUpdateFiles)
 		r.Put("/api/diff/{id}", s.handleReplaceDiff)

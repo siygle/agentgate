@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  Built-in renderer: unified diffs.
+
+  Runs inside AgentGate's render sandbox (see web/static/js/sandbox.js) — an
+  opaque-origin iframe with `default-src 'none'; connect-src 'none'`. sandbox.js inlines
+  every agentgate: reference from the server, resolves the renderer's own scripts from
+  /static/renderers/, and injects the decrypted payload as inert JSON.
+
+  diff2html is used only as a *parser*: the tables are built by renderer.js against the
+  .diff-* classes in renderer.css, so diff2html's own stylesheet is not needed.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGate diff</title>
+
+<link rel="stylesheet" href="agentgate:tokens">
+<link rel="stylesheet" href="agentgate:renderer">
+<link rel="stylesheet" href="agentgate:highlight-css">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/static/renderers/common/frame-ui.css">
+</head>
+<body class="ag-frame">
+<div class="ag-doc-toolbar" id="ag-toolbar" hidden>
+  <label class="ag-find">
+    <span class="ag-find-icon" aria-hidden="true">⌕</span>
+    <input type="search" id="ag-find-input" placeholder="Find in diff" autocomplete="off" spellcheck="false">
+    <span class="ag-find-count" id="ag-find-count"></span>
+    <button type="button" id="ag-find-prev" class="ag-find-nav" title="Previous match" aria-label="Previous match">↑</button>
+    <button type="button" id="ag-find-next" class="ag-find-nav" title="Next match" aria-label="Next match">↓</button>
+  </label>
+</div>
+
+<div class="ag-page">
+  <div class="diff-summary text-sm text-muted text-mono" id="ag-summary"></div>
+
+  <div class="diff-toolbar" id="ag-diff-toolbar">
+    <div class="diff-toolbar-group">
+      <button type="button" class="diff-toolbar-btn" id="ag-view-split">Split</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-view-unified">Unified</button>
+    </div>
+    <div class="diff-toolbar-group">
+      <button type="button" class="diff-toolbar-btn" id="ag-expand-all">Expand All</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-collapse-all">Collapse All</button>
+    </div>
+  </div>
+
+  <div id="ag-diff-files"></div>
+</div>
+
+<script src="agentgate:highlight"></script>
+<script src="agentgate:diff2html"></script>
+<script src="/static/renderers/common/frame-ui.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

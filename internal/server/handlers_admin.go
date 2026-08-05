@@ -600,13 +600,14 @@ func (s *Server) handleAdminResetReshare(w http.ResponseWriter, r *http.Request)
 // ---------------------------------------------------------------------------
 
 // kindFromParam validates the {kind} path segment and maps it to its table and
-// preview path prefix.
+// preview path prefix. Every kind now previews at the unified /s/ route; the prefix is
+// still returned per kind so a future kind could differ.
 func kindFromParam(kind string) (table, prefix string, ok bool) {
 	switch kind {
 	case "diff":
-		return "diffs", "/p/", true
+		return "diffs", sharePath, true
 	case "files":
-		return "file_bundles", "/f/", true
+		return "file_bundles", sharePath, true
 	}
 	return "", "", false
 }

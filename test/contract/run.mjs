@@ -45,7 +45,7 @@ async function main() {
   const fileToken = body.data?.owner_token;
   check("create returns id", !!fileId);
   check("create returns owner_token", !!fileToken);
-  check("preview_url uses /f/", (body.data?.preview_url || "").includes(`/f/${fileId}`));
+  check("preview_url uses /s/", (body.data?.preview_url || "").includes(`/s/${fileId}`));
   check("manage_url has #owner=", (body.data?.manage_url || "").includes("#owner="));
 
   // --- get (files) ---
@@ -70,7 +70,7 @@ async function main() {
   check("POST /api/diff -> 201", r.status === 201, `got ${r.status}`);
   body = await r.json();
   const diffId = body.data?.id;
-  check("diff preview_url uses /p/", (body.data?.preview_url || "").includes(`/p/${diffId}`));
+  check("diff preview_url uses /s/", (body.data?.preview_url || "").includes(`/s/${diffId}`));
   r = await fetch(`${BASE}/api/diff/${diffId}`);
   body = await r.json();
   check("GET diff kind = diff", body.data?.kind === "diff");
@@ -160,8 +160,46 @@ async function main() {
   // --- pages ---
   r = await fetch(`${BASE}/`);
   check("GET / -> 200 html", r.status === 200 && (r.headers.get("content-type") || "").includes("text/html"));
-  r = await fetch(`${BASE}/f/${fileId}`);
-  check("GET /f/{id} -> 200 html shell", r.status === 200 && (r.headers.get("content-type") || "").includes("text/html"));
+  // /s/ is the route new shares use; the five kind-specific prefixes are permanent
+  // aliases, because a --no-expiry link handed out long ago must keep resolving. All six
+  // serve the same shell.
+  for (const prefix of ["s", "p", "f", "app", "plan", "d"]) {
+    r = await fetch(`${BASE}/${prefix}/${fileId}`);
+    check(
+      `GET /${prefix}/{id} -> 200 html shell`,
+      r.status === 200 && (r.headers.get("content-type") || "").includes("text/html"),
+    );
+    if (prefix === "s") {
+      // Share content runs in a sandboxed iframe, so the host page needs no inline
+      // script and no third-party origin. A missing CSP here would be a regression.
+      const csp = r.headers.get("content-security-policy") || "";
+      check("share shell sends a CSP", csp.includes("default-src 'self'"));
+      // 'unsafe-inline' is unavoidable here (a srcdoc iframe inherits this policy and the
+      // sandbox is all inline scripts), but no third-party script origin may appear, and
+      // connect-src must stay same-origin so nothing can be sent off-site.
+      check("share shell CSP allows no third-party script", !/script-src[^;]*https?:/.test(csp));
+      check("share shell CSP keeps connect same-origin", csp.includes("connect-src 'self'"));
+      check("share shell CSP forbids embedding", csp.includes("frame-ancestors 'none'"));
+      check("share shell CSP allows the sandbox frame", csp.includes("frame-src blob: data:"));
+    }
+  }
+  r = await fetch(`${BASE}/static/renderers/doc/frame.html`, { redirect: "manual" });
+  check("renderer shell served without a redirect", r.status === 200);
+  for (const name of ["diff", "files"]) {
+    r = await fetch(`${BASE}/static/renderers/${name}/frame.html`, { redirect: "manual" });
+    check(`renderer ${name} shell served`, r.status === 200);
+  }
+
+  // --- kind-agnostic lookup (backs /s/{id}) ---
+  r = await fetch(`${BASE}/api/share/${fileId}`);
+  body = await r.json();
+  check("GET /api/share/{id} finds a file bundle", r.status === 200 && body.data?.kind === "files");
+  check("GET /api/share/{id} returns the ciphertext", !!body.data?.encrypted_data?.ciphertext);
+  r = await fetch(`${BASE}/api/share/${diffId}`);
+  body = await r.json();
+  check("GET /api/share/{id} finds a diff", r.status === 200 && body.data?.kind === "diff");
+  r = await fetch(`${BASE}/api/share/NOPE12`);
+  check("GET /api/share/{id} unknown -> 404", r.status === 404);
 
   // --- llms ---
   r = await fetch(`${BASE}/llms.txt`);

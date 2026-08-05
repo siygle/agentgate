@@ -1,27 +1,71 @@
 (function () {
   "use strict";
 
-  var STORAGE_KEY = "agentgate-passphrase";
+  // Remembered passphrases are scoped per share. The previous single global key meant
+  // every share on this origin shared one stored secret, so anything able to read
+  // localStorage from this page — e.g. markup or an MDX expression inside *another*
+  // share — could lift a passphrase that unlocks unrelated content. Scoping keeps the
+  // blast radius to the one share the visitor already has the passphrase for.
+  var LEGACY_STORAGE_KEY = "agentgate-passphrase";
+  var STORAGE_PREFIX = "agentgate-passphrase:";
 
-  function getStoredPassphrase() {
+  // shareKey returns this share's storage key, or "" when the id is unknown (e.g. the
+  // landing page). An unknown id must NOT fall back to a shared key — that is the
+  // behaviour being removed — so callers treat "" as "storage unavailable".
+  function shareKey() {
+    var S = window.AgentGateShare;
+    var id = (S && S.route && S.route.id) || (S && S.getShareId && S.getShareId());
+    if (!id || id === "unknown") return "";
+    return STORAGE_PREFIX + id;
+  }
+
+  function readLegacy() {
     try {
-      return localStorage.getItem(STORAGE_KEY);
+      return localStorage.getItem(LEGACY_STORAGE_KEY);
     } catch (e) {
       return null;
     }
   }
 
-  function storePassphrase(passphrase) {
+  function getStoredPassphrase() {
+    var key = shareKey();
+    if (!key) return null;
     try {
-      localStorage.setItem(STORAGE_KEY, passphrase);
+      var scoped = localStorage.getItem(key);
+      if (scoped !== null) return scoped;
+    } catch (e) {
+      return null;
+    }
+    // Migration read-only fallback: a passphrase remembered under the old global key
+    // is still offered, so upgrading does not force everyone to re-enter it. It is
+    // adopted into the scoped key (and the global one dropped) by storePassphrase
+    // once it has actually decrypted this share.
+    return readLegacy();
+  }
+
+  function storePassphrase(passphrase) {
+    var key = shareKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, passphrase);
+      // Only retire the global key once a share has adopted the exact same value —
+      // proof it was valid here. A different value means the global key still belongs
+      // to some other share, so leave it for that share to migrate.
+      if (readLegacy() === passphrase) {
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
     } catch (e) {
       // silently fail
     }
   }
 
   function clearStoredPassphrase() {
+    var key = shareKey();
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      if (key) localStorage.removeItem(key);
+      // An explicit clear also drops the pre-scoping key, so "forget my passphrase"
+      // cannot leave a copy behind.
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch (e) {
       // silently fail
     }
