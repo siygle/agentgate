@@ -90,7 +90,7 @@ docker compose up -d</div>
 go install github.com/siygle/agentgate/cmd/agentgate@latest
 
 # Or download a prebuilt binary from GitHub Releases
-# https://github.com/siygle/diff4/releases</div>
+# https://github.com/siygle/agentgate/releases</div>
     </div>
   </section>
 
@@ -111,7 +111,16 @@ agentgate git-latest
 agentgate git-staged
 
 # Share files
-agentgate files path/to/file.ts</div>
+agentgate files path/to/file.ts
+
+# Share Markdown/MDX documents
+agentgate docs ./notes.md
+
+# Share a reviewable visual plan
+agentgate plan ./plans/my-plan
+
+# Share a runnable static webapp
+agentgate webapp ./dist</div>
     </div>
   </section>
 
