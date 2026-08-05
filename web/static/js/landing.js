@@ -2,7 +2,11 @@
   "use strict";
 
   // Landing-page behaviour. Lives in a file rather than inline so the host pages can send
-  // `script-src 'self'` with no inline allowance — see pageCSP in handlers_pages.go.
+  // `script-src 'self'` with no inline allowance -- see pageCSP in handlers_pages.go.
+  //
+  // For the same reason, event handlers are wired here with addEventListener instead of
+  // inline `onclick=` attributes: an inline handler is itself inline script and is blocked
+  // by that strict policy, so the buttons would silently do nothing.
 
   function getSetupText() {
     var origin = window.location.origin;
@@ -36,28 +40,69 @@
     ].join("\n");
   }
 
+  function byId(id) {
+    return document.getElementById(id);
+  }
+
   function openSetupModal() {
-    document.getElementById("setup-content").textContent = getSetupText();
-    document.getElementById("setup-modal").style.display = "flex";
-    document.getElementById("setup-copy-btn").textContent = "Copy";
+    byId("setup-content").textContent = getSetupText();
+    byId("setup-modal").style.display = "flex";
+    var copyBtn = byId("setup-copy-btn");
+    copyBtn.textContent = "Copy";
+    // Move focus into the dialog so keyboard and screen-reader users land there.
+    copyBtn.focus();
   }
 
   function closeSetupModal() {
-    document.getElementById("setup-modal").style.display = "none";
+    byId("setup-modal").style.display = "none";
   }
 
   function copySetup() {
     var text = getSetupText();
-    navigator.clipboard.writeText(text).then(function () {
-      var btn = document.getElementById("setup-copy-btn");
-      btn.textContent = "Copied!";
-      setTimeout(function () {
-        btn.textContent = "Copy";
-      }, 2000);
+    var btn = byId("setup-copy-btn");
+    if (!navigator.clipboard) {
+      btn.textContent = "Copy failed";
+      return;
+    }
+    navigator.clipboard.writeText(text).then(
+      function () {
+        btn.textContent = "Copied";
+        setTimeout(function () {
+          btn.textContent = "Copy";
+        }, 2000);
+      },
+      function () {
+        btn.textContent = "Copy failed";
+      }
+    );
+  }
+
+  function wire() {
+    var openButtons = document.querySelectorAll("[data-setup-open]");
+    for (var i = 0; i < openButtons.length; i++) {
+      openButtons[i].addEventListener("click", openSetupModal);
+    }
+
+    var closeBtn = byId("setup-close-btn");
+    var copyBtn = byId("setup-copy-btn");
+    var backdrop = byId("setup-modal");
+
+    if (closeBtn) closeBtn.addEventListener("click", closeSetupModal);
+    if (copyBtn) copyBtn.addEventListener("click", copySetup);
+    if (backdrop) {
+      backdrop.addEventListener("click", function (e) {
+        if (e.target === backdrop) closeSetupModal();
+      });
+    }
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeSetupModal();
     });
   }
 
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeSetupModal();
-  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wire);
+  } else {
+    wire();
+  }
 })();

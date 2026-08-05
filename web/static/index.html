@@ -6,67 +6,76 @@
   <title>AgentGate - Encrypted diff &amp; file sharing</title>
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/style.css">
-  <style>
-  .setup-modal { max-width: 40rem; }
-  .setup-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
-  .setup-modal-content {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 1rem 1.25rem;
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-y: auto;
-    max-height: 60vh;
-    margin: 0;
-    color: var(--fg);
-  }
-  </style>
 </head>
 <body>
 <div class="landing">
   <header class="landing-header">
     <div class="container">
-      <a href="/" class="landing-logo">AgentGate</a>
-      <button class="btn" onclick="openSetupModal()">Agent Setup</button>
+      <a href="/" class="landing-logo">
+        <svg class="landing-logo-mark" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 11V8a6 6 0 0 1 12 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" stroke-width="2"/>
+          <circle cx="12" cy="15" r="1.4" fill="currentColor"/>
+        </svg>
+        <span>AgentGate</span>
+      </a>
+      <nav class="landing-nav">
+        <a class="landing-nav-link" href="https://github.com/siygle/agentgate" rel="noopener">GitHub</a>
+        <button class="btn btn-primary" type="button" data-setup-open>Agent Setup</button>
+      </nav>
     </div>
   </header>
 
-  <div id="setup-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeSetupModal()">
+  <div id="setup-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="setup-modal-title">
     <div class="modal setup-modal">
       <div class="setup-modal-header">
-        <h2>Agent Setup Instructions</h2>
-        <button class="btn" id="setup-copy-btn" onclick="copySetup()">Copy</button>
+        <h2 id="setup-modal-title">Agent Setup Instructions</h2>
+        <div class="setup-modal-actions">
+          <button class="btn btn-primary" type="button" id="setup-copy-btn">Copy</button>
+          <button class="btn" type="button" id="setup-close-btn" aria-label="Close">Close</button>
+        </div>
       </div>
-      <p>Copy and paste to your AI agent to generate a skill for AgentGate CLI.</p>
+      <p>Copy and paste to your AI agent to generate a skill for the AgentGate CLI.</p>
       <pre class="setup-modal-content" id="setup-content"></pre>
     </div>
   </div>
 
   <section class="landing-hero">
-    <div class="container">
-      <h1>AgentGate</h1>
-      <p>Self-hosted encrypted diff &amp; file sharing</p>
-    </div>
-  </section>
+    <div class="container landing-hero-grid">
+      <div class="landing-hero-copy">
+        <p class="eyebrow">Self-hosted · Zero-knowledge</p>
+        <h1>Share diffs and files your server can't read.</h1>
+        <p class="landing-hero-lead">
+          AgentGate encrypts everything in your terminal before it leaves your machine.
+          AES-256-GCM, client-side. The server only ever holds ciphertext -- and forgets
+          it after 7 days.
+        </p>
+        <div class="landing-cta">
+          <button class="btn btn-primary btn-lg" type="button" data-setup-open>Agent Setup</button>
+          <a class="btn btn-lg" href="#install">Install the CLI</a>
+        </div>
+        <ul class="landing-hero-meta">
+          <li>Single Go binary</li>
+          <li>SQLite storage</li>
+          <li>No external services</li>
+        </ul>
+      </div>
 
-  <section class="landing-section">
-    <div class="container">
-      <div class="landing-features">
-        <div class="feature-card">
-          <h3>End-to-end encrypted</h3>
-          <p>AES-256-GCM encryption. Zero-knowledge architecture -- the server never sees your content.</p>
+      <div class="terminal" aria-hidden="true">
+        <div class="terminal-bar">
+          <span class="terminal-dot terminal-dot--r"></span>
+          <span class="terminal-dot terminal-dot--y"></span>
+          <span class="terminal-dot terminal-dot--g"></span>
+          <span class="terminal-title">agentgate — zsh</span>
         </div>
-        <div class="feature-card">
-          <h3>Auto-expiry</h3>
-          <p>All shared content expires after 7 days by default. Uploads may set a shorter or longer TTL.</p>
-        </div>
-        <div class="feature-card">
-          <h3>Lightweight</h3>
-          <p>Single binary, SQLite storage, no external dependencies.</p>
+        <div class="terminal-body">
+<span class="t-line"><span class="t-prompt">$</span> agentgate git-latest</span>
+<span class="t-line t-dim">→ encrypting 1 diff (AES-256-GCM)…</span>
+<span class="t-line t-ok">✓ sealed client-side · server sees ciphertext only</span>
+<span class="t-line t-dim">→ uploading…</span>
+<span class="t-line">https://your-domain.com<span class="t-accent">/s/8f3c…#key</span></span>
+<span class="t-line t-dim">  expires in 7 days</span>
+<span class="t-line"><span class="t-prompt">$</span> <span class="t-cursor">▊</span></span>
         </div>
       </div>
     </div>
@@ -74,59 +83,114 @@
 
   <section class="landing-section">
     <div class="container">
-      <h2>Quick start</h2>
-      <div class="landing-code"># Download and run
+      <p class="eyebrow">Why AgentGate</p>
+      <div class="landing-features">
+        <div class="feature-card">
+          <span class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <h3>End-to-end encrypted</h3>
+          <p>AES-256-GCM, encrypted in the CLI. Zero-knowledge by design -- the server never sees your content or your key.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <h3>Auto-expiry</h3>
+          <p>Shared content expires after 7 days by default. Each upload can set a shorter or longer TTL when you need it.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <h3>Lightweight</h3>
+          <p>One binary, SQLite storage, no external dependencies. Run it with a flag or bring it up with Docker Compose.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-section" id="install">
+    <div class="container">
+      <p class="eyebrow">Get started</p>
+      <h2 class="landing-section-title">From zero to a shared link in four steps</h2>
+      <ol class="landing-steps">
+        <li class="landing-step">
+          <span class="landing-step-num">01</span>
+          <div class="landing-step-body">
+            <h3>Run the server</h3>
+            <div class="terminal terminal--code">
+              <div class="terminal-bar"><span class="terminal-title">deploy</span></div>
+              <pre class="terminal-code"># Download and run
 ./agentgate-server --port 8080 --base-url https://your-domain.com
 
 # Or with Docker
-docker compose up -d</div>
-    </div>
-  </section>
-
-  <section class="landing-section">
-    <div class="container">
-      <h2>Install CLI</h2>
-      <div class="landing-code"># Install with go install
+docker compose up -d</pre>
+            </div>
+          </div>
+        </li>
+        <li class="landing-step">
+          <span class="landing-step-num">02</span>
+          <div class="landing-step-body">
+            <h3>Install the CLI</h3>
+            <div class="terminal terminal--code">
+              <div class="terminal-bar"><span class="terminal-title">install</span></div>
+              <pre class="terminal-code"># Install with go install
 go install github.com/siygle/agentgate/cmd/agentgate@latest
 
-# Or download a prebuilt binary from GitHub Releases
-# https://github.com/siygle/agentgate/releases</div>
-    </div>
-  </section>
-
-  <section class="landing-section">
-    <div class="container">
-      <h2>CLI usage</h2>
-      <div class="landing-code"># Configure your server (required)
+# Or grab a prebuilt binary from GitHub Releases
+# https://github.com/siygle/agentgate/releases</pre>
+            </div>
+          </div>
+        </li>
+        <li class="landing-step">
+          <span class="landing-step-num">03</span>
+          <div class="landing-step-body">
+            <h3>Point it at your server and make a key</h3>
+            <div class="terminal terminal--code">
+              <div class="terminal-bar"><span class="terminal-title">configure</span></div>
+              <pre class="terminal-code"># Configure your server (required)
 export AGENTGATE_SERVER=https://your-domain.com
 
-# Set up encryption key
+# Set up your encryption key
 agentgate key-gen
-source ~/.zshrc
-
-# Share latest commit diff
-agentgate git-latest
-
-# Share staged changes
-agentgate git-staged
-
-# Share files
-agentgate files path/to/file.ts
-
-# Share Markdown/MDX documents
-agentgate docs ./notes.md
-
-# Share a reviewable visual plan
-agentgate plan ./plans/my-plan
-
-# Share a runnable static webapp
-agentgate webapp ./dist</div>
+source ~/.zshrc</pre>
+            </div>
+          </div>
+        </li>
+        <li class="landing-step">
+          <span class="landing-step-num">04</span>
+          <div class="landing-step-body">
+            <h3>Share anything</h3>
+            <div class="terminal terminal--code">
+              <div class="terminal-bar"><span class="terminal-title">share</span></div>
+              <pre class="terminal-code">agentgate git-latest          # Latest commit diff
+agentgate git-staged          # Staged changes
+agentgate files path/to.ts    # Files
+agentgate docs ./notes.md     # Markdown / MDX documents
+agentgate plan ./plans/my     # A reviewable visual plan
+agentgate webapp ./dist       # A runnable static webapp</pre>
+            </div>
+          </div>
+        </li>
+      </ol>
     </div>
   </section>
 
   <footer class="landing-footer">
-    <div class="container">
-      <p>AgentGate - Encrypted sharing for code</p>
+    <div class="container landing-footer-inner">
+      <a href="/" class="landing-logo landing-logo--sm">AgentGate</a>
+      <span class="landing-footer-note">Encrypted sharing for code · self-hosted</span>
+      <a class="landing-nav-link" href="https://github.com/siygle/agentgate" rel="noopener">GitHub</a>
     </div>
   </footer>
 </div>
