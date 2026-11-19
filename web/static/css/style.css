@@ -453,12 +453,16 @@
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
+/* minmax(0, ...) lets the code blocks scroll inside their card instead of widening the
+   page: a 1fr track never shrinks below its <pre>, which pushed the whole landing page
+   (and the Agent Setup dialog's Copy button) off-screen on phones. */
 .landing-step {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
