@@ -131,6 +131,13 @@
     return "files";
   }
 
+  function t(key, vars, fallback) {
+    if (window.AgentGateI18n && window.AgentGateI18n.t) {
+      return window.AgentGateI18n.t(key, vars);
+    }
+    return fallback;
+  }
+
   // plan maps a decrypted payload to the render config AgentGateShell.render expects.
   function plan(data) {
     var files = data.files || [];
@@ -141,18 +148,25 @@
       (files.length === 1 ? files[0].title : "");
 
     if (type === "webapp") {
+      var webKey = files.length === 1 ? "kind.webappOne" : "kind.webappMany";
+      var webVars = { n: files.length };
       return {
         webapp: true,
-        label: "webapp — " + files.length + " file" + (files.length === 1 ? "" : "s"),
+        label: t(webKey, webVars, "webapp — " + files.length + " file" + (files.length === 1 ? "" : "s")),
+        labelKey: webKey,
+        labelVars: webVars,
         title: title || "webapp",
         exportKind: "app",
       };
     }
 
     if (type === "diff") {
+      var diffTitle = title || t("common.untitled", null, "untitled");
       return {
         renderer: "diff",
-        label: "diff — " + (title || "untitled"),
+        label: t("kind.diff", { title: diffTitle }, "diff — " + (title || "untitled")),
+        labelKey: "kind.diff",
+        labelVars: { title: title || "" },
         // A diff always needs diff2html to parse it and hljs to colour it, so there is
         // nothing to gate here.
         features: { highlight: true },
@@ -164,9 +178,13 @@
     if (type === "visual-plan" || type === "documents") {
       var isPlan = type === "visual-plan";
       var features = detectFeatures(data, files, "doc");
+      var docKey = isPlan ? "kind.visualPlan" : "kind.documents";
+      var docTitle = title || t("common.untitled", null, "untitled");
       return {
         renderer: "doc",
-        label: (isPlan ? "visual plan" : "documents") + " — " + (title || "untitled"),
+        label: t(docKey, { title: docTitle }, (isPlan ? "visual plan" : "documents") + " — " + (title || "untitled")),
+        labelKey: docKey,
+        labelVars: { title: title || "" },
         title: title || (isPlan ? "Visual plan" : "Documents"),
         features: features,
         // MDX compilation evaluates the compiled document body, so its frame needs
@@ -177,9 +195,13 @@
       };
     }
 
+    var filesKey = files.length === 1 ? "kind.filesOne" : "kind.filesMany";
+    var filesVars = { n: files.length };
     return {
       renderer: "files",
-      label: files.length + " file" + (files.length === 1 ? "" : "s"),
+      label: t(filesKey, filesVars, files.length + " file" + (files.length === 1 ? "" : "s")),
+      labelKey: filesKey,
+      labelVars: filesVars,
       title: title || "files",
       features: detectFeatures(data, files, "files"),
       exportKind: "files",

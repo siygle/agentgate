@@ -60,12 +60,17 @@
   function renderNotFound() {
     var app = document.getElementById("app");
     if (!app) return;
+    var t = function (k, fb) { return window.AgentGateI18n ? window.AgentGateI18n.t(k) : fb; };
     app.innerHTML =
       '<div class="not-found">' +
       "<h1>404</h1>" +
-      "<p>Not found or expired</p>" +
-      '<a href="/" class="btn" style="margin-top:1.5rem;">Back to home</a>' +
+      '<p data-i18n="share.notFound"></p>' +
+      '<a href="/" class="btn" style="margin-top:1.5rem;" data-i18n="common.backHome"></a>' +
       "</div>";
+    var p = app.querySelector('[data-i18n="share.notFound"]');
+    if (p) p.textContent = t("share.notFound", "Not found or expired");
+    var a = app.querySelector('[data-i18n="common.backHome"]');
+    if (a) a.textContent = t("common.backHome", "Back to home");
   }
 
   window.AgentGateShare = {

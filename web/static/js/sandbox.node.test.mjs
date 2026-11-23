@@ -35,6 +35,41 @@ function check(name, cond) {
   check("bridge defines window.AgentGateFrame", /window\.AgentGateFrame\s*=/.test(I.BRIDGE_SOURCE));
   check("bridge only touches parent via postMessage", (I.BRIDGE_SOURCE.match(/parent\./g) || []).every(() => true) &&
     !/parent\.(?!postMessage)/.test(I.BRIDGE_SOURCE));
+  check("bridge guards external links from in-frame navigation", /window\.open\(href,'_blank','noopener,noreferrer'\)/.test(I.BRIDGE_SOURCE));
+  check("bridge toggles highlight-dark-css media on theme change", /highlight-dark-css/.test(I.BRIDGE_SOURCE));
+  check("bridge syncs language into AgentGateI18n", /AgentGateI18n/.test(I.BRIDGE_SOURCE));
+  check("mount allows popups to escape sandbox", src.includes("allow-popups-to-escape-sandbox"));
+}
+
+// --- resolveRefs preserves media attribute on inlined stylesheets -----------------
+{
+  const created = [];
+  const fakeLink = {
+    attrs: { href: "agentgate:highlight-dark-css", media: "(prefers-color-scheme: dark)" },
+    getAttribute(k) { return this.attrs[k] || null; },
+    parentNode: {
+      replaceChild(next) { created.push(next); },
+    },
+  };
+  const fakeDoc = {
+    createElement(tag) {
+      const attrs = {};
+      return {
+        tag,
+        attrs,
+        textContent: "",
+        setAttribute(k, v) { attrs[k] = v; },
+        getAttribute(k) { return attrs[k] || null; },
+      };
+    },
+    querySelectorAll(sel) {
+      if (sel.includes("stylesheet")) return [fakeLink];
+      return [];
+    },
+  };
+  await I.resolveRefs(fakeDoc, () => ({ text: ".hljs{color:#fff}", label: "agentgate:highlight-dark-css" }), {});
+  check("inlined style preserves media attribute", created.length === 1 && created[0].attrs.media === "(prefers-color-scheme: dark)");
+  check("inlined style keeps builtin label", created[0].attrs["data-agentgate-builtin"] === "agentgate:highlight-dark-css");
 }
 
 // --- payload embedding ------------------------------------------------------------

@@ -231,15 +231,32 @@
     totalAdd += f.addedLines;
     totalDel += f.deletedLines;
   });
-  summary.innerHTML =
-    diffFiles.length + " file" + (diffFiles.length === 1 ? "" : "s") + " | " +
-    '<span class="badge-add">+' + totalAdd + "</span> " +
-    '<span class="badge-del">-' + totalDel + "</span>";
+
+  function renderSummary() {
+    var fileCount =
+      diffFiles.length === 1
+        ? UI.t("frame.diffFileOne", null, "1 file")
+        : UI.t("frame.diffFiles", { n: diffFiles.length }, diffFiles.length + " files");
+    summary.innerHTML =
+      escapeHtml(fileCount) + " | " +
+      '<span class="badge-add">+' + totalAdd + "</span> " +
+      '<span class="badge-del">-' + totalDel + "</span>";
+  }
+  renderSummary();
 
   if (!diffFiles.length) {
     filesContainer.innerHTML =
-      '<p class="text-muted text-sm">This diff is empty — nothing was changed.</p>';
+      '<p class="text-muted text-sm" data-i18n="frame.emptyDiff">' +
+      escapeHtml(UI.t("frame.emptyDiff", null, "This diff is empty — nothing was changed.")) +
+      "</p>";
     document.getElementById("ag-diff-toolbar").hidden = true;
+  }
+
+  if (window.AgentGateI18n && window.AgentGateI18n.onChange) {
+    window.AgentGateI18n.onChange(renderSummary);
+  }
+  if (window.AgentGateI18n && window.AgentGateI18n.applyDom) {
+    window.AgentGateI18n.applyDom(document);
   }
 
   function renderFiles() {

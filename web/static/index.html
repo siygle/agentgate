@@ -20,8 +20,9 @@
         <span>AgentGate</span>
       </a>
       <nav class="landing-nav">
+        <span id="landing-lang-slot"></span>
         <a class="landing-nav-link" href="https://github.com/siygle/agentgate" rel="noopener">GitHub</a>
-        <button class="btn btn-primary" type="button" data-setup-open>Agent Setup</button>
+        <button class="btn btn-primary" type="button" data-setup-open data-i18n="landing.agentSetup">Agent Setup</button>
       </nav>
     </div>
   </header>
@@ -29,13 +30,13 @@
   <div id="setup-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="setup-modal-title">
     <div class="modal setup-modal">
       <div class="setup-modal-header">
-        <h2 id="setup-modal-title">Agent Setup Instructions</h2>
+        <h2 id="setup-modal-title" data-i18n="landing.setupModalTitle">Agent Setup Instructions</h2>
         <div class="setup-modal-actions">
-          <button class="btn btn-primary" type="button" id="setup-copy-btn">Copy</button>
-          <button class="btn" type="button" id="setup-close-btn" aria-label="Close">Close</button>
+          <button class="btn btn-primary" type="button" id="setup-copy-btn" data-i18n="common.copy">Copy</button>
+          <button class="btn" type="button" id="setup-close-btn" aria-label="Close" data-i18n="common.close" data-i18n-aria-label="common.close">Close</button>
         </div>
       </div>
-      <p>Copy and paste to your AI agent to generate a skill for the AgentGate CLI.</p>
+      <p data-i18n="landing.setupModalHint">Copy and paste to your AI agent to generate a skill for the AgentGate CLI.</p>
       <pre class="setup-modal-content" id="setup-content"></pre>
     </div>
   </div>
@@ -43,21 +44,21 @@
   <section class="landing-hero">
     <div class="container landing-hero-grid">
       <div class="landing-hero-copy">
-        <p class="eyebrow">Self-hosted · Zero-knowledge</p>
-        <h1>Share diffs and files your server can't read.</h1>
-        <p class="landing-hero-lead">
+        <p class="eyebrow" data-i18n="landing.eyebrowHero">Self-hosted · Zero-knowledge</p>
+        <h1 data-i18n="landing.heroTitle">Share diffs and files your server can't read.</h1>
+        <p class="landing-hero-lead" data-i18n="landing.heroLead">
           AgentGate encrypts everything in your terminal before it leaves your machine.
           AES-256-GCM, client-side. The server only ever holds ciphertext -- and forgets
           it after 7 days.
         </p>
         <div class="landing-cta">
-          <button class="btn btn-primary btn-lg" type="button" data-setup-open>Agent Setup</button>
-          <a class="btn btn-lg" href="#install">Install the CLI</a>
+          <button class="btn btn-primary btn-lg" type="button" data-setup-open data-i18n="landing.agentSetup">Agent Setup</button>
+          <a class="btn btn-lg" href="#install" data-i18n="landing.installCli">Install the CLI</a>
         </div>
         <ul class="landing-hero-meta">
-          <li>Single Go binary</li>
-          <li>SQLite storage</li>
-          <li>No external services</li>
+          <li data-i18n="landing.metaBinary">Single Go binary</li>
+          <li data-i18n="landing.metaSqlite">SQLite storage</li>
+          <li data-i18n="landing.metaNoDeps">No external services</li>
         </ul>
       </div>
 
@@ -83,7 +84,7 @@
 
   <section class="landing-section">
     <div class="container">
-      <p class="eyebrow">Why AgentGate</p>
+      <p class="eyebrow" data-i18n="landing.eyebrowWhy">Why AgentGate</p>
       <div class="landing-features">
         <div class="feature-card">
           <span class="feature-icon">
@@ -92,8 +93,8 @@
               <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </span>
-          <h3>End-to-end encrypted</h3>
-          <p>AES-256-GCM, encrypted in the CLI. Zero-knowledge by design -- the server never sees your content or your key.</p>
+          <h3 data-i18n="landing.featEncTitle">End-to-end encrypted</h3>
+          <p data-i18n="landing.featEncBody">AES-256-GCM, encrypted in the CLI. Zero-knowledge by design -- the server never sees your content or your key.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">
@@ -102,8 +103,8 @@
               <path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </span>
-          <h3>Auto-expiry</h3>
-          <p>Shared content expires after 7 days by default. Each upload can set a shorter or longer TTL when you need it.</p>
+          <h3 data-i18n="landing.featExpTitle">Auto-expiry</h3>
+          <p data-i18n="landing.featExpBody">Shared content expires after 7 days by default. Each upload can set a shorter or longer TTL when you need it.</p>
         </div>
         <div class="feature-card">
           <span class="feature-icon">
@@ -112,8 +113,8 @@
               <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
             </svg>
           </span>
-          <h3>Lightweight</h3>
-          <p>One binary, SQLite storage, no external dependencies. Run it with a flag or bring it up with Docker Compose.</p>
+          <h3 data-i18n="landing.featLiteTitle">Lightweight</h3>
+          <p data-i18n="landing.featLiteBody">One binary, SQLite storage, no external dependencies. Run it with a flag or bring it up with Docker Compose.</p>
         </div>
       </div>
     </div>
@@ -121,13 +122,13 @@
 
   <section class="landing-section" id="install">
     <div class="container">
-      <p class="eyebrow">Get started</p>
-      <h2 class="landing-section-title">From zero to a shared link in four steps</h2>
+      <p class="eyebrow" data-i18n="landing.eyebrowStart">Get started</p>
+      <h2 class="landing-section-title" data-i18n="landing.stepsTitle">From zero to a shared link in four steps</h2>
       <ol class="landing-steps">
         <li class="landing-step">
           <span class="landing-step-num">01</span>
           <div class="landing-step-body">
-            <h3>Run the server</h3>
+            <h3 data-i18n="landing.step1">Run the server</h3>
             <div class="terminal terminal--code">
               <div class="terminal-bar"><span class="terminal-title">deploy</span></div>
               <pre class="terminal-code"># Download and run
@@ -141,7 +142,7 @@ docker compose up -d</pre>
         <li class="landing-step">
           <span class="landing-step-num">02</span>
           <div class="landing-step-body">
-            <h3>Install the CLI</h3>
+            <h3 data-i18n="landing.step2">Install the CLI</h3>
             <div class="terminal terminal--code">
               <div class="terminal-bar"><span class="terminal-title">install</span></div>
               <pre class="terminal-code"># Install with go install
@@ -155,7 +156,7 @@ go install github.com/siygle/agentgate/cmd/agentgate@latest
         <li class="landing-step">
           <span class="landing-step-num">03</span>
           <div class="landing-step-body">
-            <h3>Point it at your server and make a key</h3>
+            <h3 data-i18n="landing.step3">Point it at your server and make a key</h3>
             <div class="terminal terminal--code">
               <div class="terminal-bar"><span class="terminal-title">configure</span></div>
               <pre class="terminal-code"># Configure your server (required)
@@ -170,7 +171,7 @@ source ~/.zshrc</pre>
         <li class="landing-step">
           <span class="landing-step-num">04</span>
           <div class="landing-step-body">
-            <h3>Share anything</h3>
+            <h3 data-i18n="landing.step4">Share anything</h3>
             <div class="terminal terminal--code">
               <div class="terminal-bar"><span class="terminal-title">share</span></div>
               <pre class="terminal-code">agentgate git-latest          # Latest commit diff
@@ -189,12 +190,13 @@ agentgate webapp ./dist       # A runnable static webapp</pre>
   <footer class="landing-footer">
     <div class="container landing-footer-inner">
       <a href="/" class="landing-logo landing-logo--sm">AgentGate</a>
-      <span class="landing-footer-note">Encrypted sharing for code · self-hosted</span>
+      <span class="landing-footer-note" data-i18n="landing.footerNote">Encrypted sharing for code · self-hosted</span>
       <a class="landing-nav-link" href="https://github.com/siygle/agentgate" rel="noopener">GitHub</a>
     </div>
   </footer>
 </div>
 
+  <script src="/static/js/i18n.js"></script>
   <script src="/static/js/landing.js"></script>
 </body>
 </html>

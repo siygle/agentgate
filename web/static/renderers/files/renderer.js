@@ -45,78 +45,51 @@
     }
   }
 
-  // --- copy buttons -------------------------------------------------------------
+  // --- bundle link resolution ---------------------------------------------------
 
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).then(
-        function () {
-          return true;
-        },
-        function () {
-          return fallbackCopy(text);
-        }
-      );
+  function normalizePath(p) {
+    return String(p || "").replace(/^\.?\//, "").replace(/[?#].*$/, "");
+  }
+
+  function resolveRelativePath(baseFile, relPath) {
+    var raw = String(relPath || "").replace(/[?#].*$/, "");
+    if (!raw) return "";
+    var baseParts = String(baseFile || "").split("/");
+    baseParts.pop();
+    var segs = (raw.charAt(0) === "/" ? raw.slice(1) : baseParts.concat(raw.split("/")).join("/")).split("/");
+    var out = [];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (!s || s === ".") continue;
+      if (s === "..") {
+        if (out.length) out.pop();
+      } else {
+        out.push(s);
+      }
     }
-    return Promise.resolve(fallbackCopy(text));
+    return out.join("/");
   }
 
-  // The frame is sandboxed without allow-same-origin, so the async Clipboard API can be
-  // refused. execCommand still works from a user gesture and is the only fallback left.
-  function fallbackCopy(text) {
-    try {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      var ok = document.execCommand("copy");
-      ta.remove();
-      return ok;
-    } catch (e) {
-      return false;
+  function resolveBundleIndex(relPath, baseTitle) {
+    if (!relPath || !files.length) return -1;
+    var candidates = [];
+    var fromCur = resolveRelativePath(baseTitle || "", relPath);
+    if (fromCur) candidates.push(fromCur);
+    var cleaned = normalizePath(relPath);
+    if (cleaned && candidates.indexOf(cleaned) === -1) candidates.push(cleaned);
+    var base = cleaned.split("/").pop();
+    for (var c = 0; c < candidates.length; c++) {
+      var target = candidates[c];
+      for (var i = 0; i < files.length; i++) {
+        if (normalizePath(files[i].title || "") === target) return i;
+      }
     }
-  }
-
-  function flashCopyState(btn, ok) {
-    var orig = "Copy";
-    btn.textContent = ok ? "Copied" : "Failed";
-    btn.classList.add(ok ? "copy-btn--success" : "copy-btn--error");
-    btn.disabled = true;
-    setTimeout(function () {
-      btn.textContent = orig;
-      btn.classList.remove("copy-btn--success", "copy-btn--error");
-      btn.disabled = false;
-    }, 1500);
-  }
-
-  function createCopyButton(getText) {
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "copy-btn";
-    btn.textContent = "Copy";
-    btn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      Promise.resolve(copyText(getText() || "")).then(function (ok) {
-        flashCopyState(btn, ok);
-      });
-    });
-    return btn;
-  }
-
-  function attachCodeBlockCopyButtons(container) {
-    if (!container) return;
-    Array.prototype.forEach.call(container.querySelectorAll("pre"), function (pre) {
-      var code = pre.querySelector("code");
-      if (!code) return;
-      var btn = createCopyButton(function () {
-        return code.textContent;
-      });
-      btn.classList.add("copy-btn--block");
-      pre.appendChild(btn);
-    });
+    if (base) {
+      for (var j = 0; j < files.length; j++) {
+        if (normalizePath(files[j].title || "").split("/").pop() === base) return j;
+      }
+    }
+    return -1;
   }
 
   // --- content ------------------------------------------------------------------
@@ -128,17 +101,19 @@
     var sourceTab = document.createElement("button");
     sourceTab.type = "button";
     sourceTab.className = "tab active";
-    sourceTab.textContent = "Source";
+    sourceTab.setAttribute("data-i18n", "frame.sourceTab");
+    sourceTab.textContent = UI.t("frame.sourceTab", null, "Source");
 
     var previewTab = document.createElement("button");
     previewTab.type = "button";
     previewTab.className = "tab";
-    previewTab.textContent = "Preview";
+    previewTab.setAttribute("data-i18n", "frame.previewTab");
+    previewTab.textContent = UI.t("frame.previewTab", null, "Preview");
 
     tabBar.appendChild(sourceTab);
     tabBar.appendChild(previewTab);
     tabBar.appendChild(
-      createCopyButton(function () {
+      UI.createCopyButton(function () {
         return file.content || "";
       })
     );
@@ -158,9 +133,19 @@
       // renderMarkdownPanel is only reached for a markdown file, so detectFeatures should
       // have requested `marked`. Show why the preview is empty instead of leaving a blank.
       console.error("AgentGate: markdown file present but the markdown renderer was not inlined");
-      previewPane.textContent = "Preview unavailable — the markdown renderer was not loaded for this share.";
+      previewPane.textContent = UI.t(
+        "frame.missingMarkdown",
+        null,
+        "Preview unavailable — the markdown renderer was not loaded for this share."
+      );
     }
-    attachCodeBlockCopyButtons(previewPane);
+    UI.attachCodeBlockCopyButtons(previewPane);
+    UI.assignHeadingIds(previewPane);
+    UI.prepareLinks(previewPane, {
+      canResolveFile: function (p) {
+        return resolveBundleIndex(p, file.title) !== -1;
+      },
+    });
     target.appendChild(previewPane);
 
     function select(tab) {
@@ -200,7 +185,7 @@
       codeBlock.className = "code-content";
       codeBlock.innerHTML = '<code class="hljs">' + highlightCode(file.content || "", lang) + "</code>";
       wrap.appendChild(codeBlock);
-      attachCodeBlockCopyButtons(wrap);
+      UI.attachCodeBlockCopyButtons(wrap);
     }
     return wrap;
   }
@@ -264,7 +249,7 @@
         codeBlock.className = "code-content";
         codeBlock.innerHTML = '<code class="hljs">' + highlightCode(file.content || "", lang) + "</code>";
         body.appendChild(codeBlock);
-        attachCodeBlockCopyButtons(body);
+        UI.attachCodeBlockCopyButtons(body);
       }
 
       header.addEventListener("click", function () {
@@ -310,12 +295,41 @@
   };
 
   if (!files.length) {
-    contentPanel.innerHTML = '<p class="text-muted text-sm">This bundle is empty.</p>';
+    contentPanel.innerHTML =
+      '<p class="text-muted text-sm" data-i18n="frame.emptyBundle">' +
+      escapeHtml(UI.t("frame.emptyBundle", null, "This bundle is empty.")) +
+      "</p>";
   } else {
     buildSidebar();
     buildAccordion();
     renderDesktopContent(0);
   }
-  UI.wireAnchors(document.querySelector(".file-viewer-body"));
+  UI.wireAnchors(document.querySelector(".file-viewer-body"), {
+    onFileLink: function (path, hash) {
+      var curTitle = files[activeIndex] ? files[activeIndex].title : "";
+      var idx = resolveBundleIndex(path, curTitle);
+      if (idx === -1) return;
+      activeIndex = idx;
+      Array.prototype.forEach.call(sidebar.querySelectorAll(".file-sidebar-item"), function (el, i) {
+        el.classList.toggle("active", i === idx);
+      });
+      renderDesktopContent(idx);
+      var accItems = accordion.querySelectorAll(".accordion-item");
+      if (accItems[idx]) {
+        var accBody = accItems[idx].querySelector(".accordion-body");
+        var accArrow = accItems[idx].querySelector(".accordion-arrow");
+        if (accBody) accBody.style.display = "";
+        if (accArrow) accArrow.innerHTML = "&#9650;";
+        Frame.reportHeight();
+      }
+      if (hash) {
+        UI.scrollToHash(hash);
+        Frame.reportHash(hash);
+      }
+    },
+  });
+  if (window.AgentGateI18n && window.AgentGateI18n.applyDom) {
+    window.AgentGateI18n.applyDom(document);
+  }
   if (boot.hash) UI.scrollToHash(boot.hash);
 })();

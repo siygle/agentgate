@@ -10,6 +10,13 @@
   // holds the decryption key, the remembered passphrase, and possibly an admin session
   // cookie. Interpreting content happens in the frame.
 
+  function t(key, vars, fallback) {
+    if (window.AgentGateI18n && window.AgentGateI18n.t) {
+      return window.AgentGateI18n.t(key, vars);
+    }
+    return fallback != null ? fallback : key;
+  }
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -54,7 +61,9 @@
 
     var aside = el("aside", "plan-feedback collapsed");
     var header = el("div", "plan-feedback-toggle");
-    header.appendChild(el("span", null, "Chat / Feedback"));
+    var titleEl = el("span", null, t("feedback.title", null, "Chat / Feedback"));
+    titleEl.setAttribute("data-i18n", "feedback.title");
+    header.appendChild(titleEl);
     header.appendChild(el("span", "plan-feedback-chevron", "▲"));
     header.addEventListener("click", function () {
       aside.classList.toggle("collapsed");
@@ -62,9 +71,13 @@
     aside.appendChild(header);
 
     var content = el("div", "plan-feedback-content");
-    content.appendChild(
-      el("p", "plan-feedback-hint", "Local-only notes for now. Copy them back to your agent after review.")
+    var hintEl = el(
+      "p",
+      "plan-feedback-hint",
+      t("feedback.hint", null, "Local-only notes for now. Copy them back to your agent after review.")
     );
+    hintEl.setAttribute("data-i18n", "feedback.hint");
+    content.appendChild(hintEl);
 
     var list = el("div", "plan-feedback-list");
 
@@ -79,12 +92,14 @@
     }
 
     var ta = el("textarea", "form-input plan-feedback-input");
-    ta.placeholder = "Leave feedback, questions, or change requests...";
+    ta.placeholder = t("feedback.placeholder", null, "Leave feedback, questions, or change requests...");
+    ta.setAttribute("data-i18n-placeholder", "feedback.placeholder");
 
     var actions = el("div", "plan-feedback-actions");
 
-    var add = el("button", "btn", "Add");
+    var add = el("button", "btn", t("feedback.add", null, "Add"));
     add.type = "button";
+    add.setAttribute("data-i18n", "feedback.add");
     add.addEventListener("click", function () {
       var text = (ta.value || "").trim();
       if (!text) return;
@@ -94,20 +109,22 @@
       redraw();
     });
 
-    var copy = el("button", "btn", "Copy for agent");
+    var copy = el("button", "btn", t("feedback.copyForAgent", null, "Copy for agent"));
     copy.type = "button";
+    copy.setAttribute("data-i18n", "feedback.copyForAgent");
     copy.addEventListener("click", function () {
       var text =
-        "Feedback for " + titleText + "\n\n" +
+        t("feedback.copyHeader", { title: titleText }, "Feedback for " + titleText) +
+        "\n\n" +
         items
           .map(function (item, i) {
             return i + 1 + ". " + item.text;
           })
           .join("\n");
       if (navigator.clipboard) navigator.clipboard.writeText(text);
-      copy.textContent = "Copied";
+      copy.textContent = t("common.copied", null, "Copied");
       setTimeout(function () {
-        copy.textContent = "Copy for agent";
+        copy.textContent = t("feedback.copyForAgent", null, "Copy for agent");
       }, 1200);
     });
 
@@ -132,8 +149,10 @@
 
     var open = el("button", "btn btn-icon", "↗");
     open.type = "button";
-    open.title = "Open in a new tab (standalone, no network access)";
-    open.setAttribute("aria-label", "Open in a new tab");
+    open.setAttribute("data-i18n-title", "standalone.openTitle");
+    open.setAttribute("data-i18n-aria-label", "standalone.openAria");
+    open.title = t("standalone.openTitle", null, "Open in a new tab (standalone, no network access)");
+    open.setAttribute("aria-label", t("standalone.openAria", null, "Open in a new tab"));
     open.addEventListener("click", function () {
       var url = handle.objectURL();
       var win = window.open(url, "_blank");
@@ -141,13 +160,15 @@
       setTimeout(function () {
         URL.revokeObjectURL(url);
       }, 60000);
-      if (!win) open.title = "Popup blocked — allow popups to open standalone";
+      if (!win) open.title = t("standalone.popupBlocked", null, "Popup blocked — allow popups to open standalone");
     });
 
     var save = el("button", "btn btn-icon", "⤓");
     save.type = "button";
-    save.title = "Save as a single self-contained .html file";
-    save.setAttribute("aria-label", "Save as HTML");
+    save.setAttribute("data-i18n-title", "standalone.saveTitle");
+    save.setAttribute("data-i18n-aria-label", "standalone.saveAria");
+    save.title = t("standalone.saveTitle", null, "Save as a single self-contained .html file");
+    save.setAttribute("aria-label", t("standalone.saveAria", null, "Save as HTML"));
     save.addEventListener("click", function () {
       var url = handle.objectURL();
       var a = document.createElement("a");
@@ -206,7 +227,7 @@
     var Sandbox = window.AgentGateSandbox;
     if (!app) return;
     if (!Sandbox) {
-      app.textContent = "Sandbox unavailable — sandbox.js failed to load.";
+      app.textContent = t("share.sandboxUnavailable", null, "Sandbox unavailable — sandbox.js failed to load.");
       return;
     }
 
@@ -221,7 +242,17 @@
     var headerRight = row();
     headerRight.style.flexShrink = "0";
 
-    headerLeft.appendChild(el("span", null, config.label));
+    var labelEl = el("span", null, config.label);
+    function updateHeaderLabel() {
+      if (!config.labelKey) return;
+      var vars = Object.assign({}, config.labelVars || {});
+      if (Object.prototype.hasOwnProperty.call(vars, "title") && !vars.title) {
+        vars.title = t("common.untitled", null, "untitled");
+      }
+      labelEl.textContent = t(config.labelKey, vars, config.label);
+    }
+    updateHeaderLabel();
+    headerLeft.appendChild(labelEl);
 
     var Expiry = window.AgentGateExpiry;
     var meta = Expiry ? Expiry.getShareMeta() : null;
@@ -239,7 +270,7 @@
     var frameHost = el("div", "shell-frame-host");
     viewer.appendChild(frameHost);
 
-    var loading = el("div", "app-error", "Preparing…");
+    var loading = el("div", "app-error", t("common.preparing", null, "Preparing…"));
     frameHost.appendChild(loading);
 
     app.textContent = "";
@@ -308,6 +339,12 @@
             handle.setSettings(described);
           });
         }
+        if (window.AgentGateI18n) {
+          window.AgentGateI18n.onChange(function () {
+            updateHeaderLabel();
+            if (Settings) handle.setSettings(Settings.describe());
+          });
+        }
 
         headerRight.appendChild(createStandaloneControls(handle, config.title));
 
@@ -344,7 +381,8 @@
       })
       .catch(function (err) {
         console.error("Failed to prepare renderer:", err);
-        loading.textContent = "Failed to render: " + (err && err.message ? err.message : err);
+        var msg = err && err.message ? err.message : String(err);
+        loading.textContent = t("share.renderFailed", { err: msg }, "Failed to render: " + msg);
       });
   }
 
@@ -368,11 +406,22 @@
         })
         .catch(function (err) {
           console.error("Decryption failed:", err);
-          if (P) P.updatePassphraseError("Decryption failed. Please check your passphrase.");
+          if (P) {
+            P.updatePassphraseError(
+              t("passphrase.failed", null, "Decryption failed. Please check your passphrase.")
+            );
+          }
         });
     }
 
     function init() {
+      if (window.AgentGateI18n) {
+        document.title = t("share.pageTitle", null, "Share - AgentGate");
+        window.AgentGateI18n.applyDom(document);
+        window.AgentGateI18n.onChange(function () {
+          document.title = t("share.pageTitle", null, "Share - AgentGate");
+        });
+      }
       if (window.AgentGateSettings) window.AgentGateSettings.init();
       var S = window.AgentGateShare;
       var P = window.AgentGatePassphrase;

@@ -23,19 +23,26 @@
     }
   }
 
+  function t(key, vars, fallback) {
+    if (window.AgentGateI18n && window.AgentGateI18n.t) {
+      return window.AgentGateI18n.t(key, vars);
+    }
+    return fallback != null ? fallback : key;
+  }
+
   function formatRelative(expiresAt) {
     if (!expiresAt) return { text: "", isWarning: false };
     try {
       var now = Date.now();
       var exp = new Date(expiresAt).getTime();
       var diff = exp - now;
-      if (diff <= 0) return { text: "Expired", isWarning: true };
+      if (diff <= 0) return { text: t("expiry.expired", null, "Expired"), isWarning: true };
       var minutes = Math.floor(diff / 60000);
       var hours = Math.floor(minutes / 60);
       var remainMinutes = minutes % 60;
       var text = hours > 0
-        ? hours + "h " + remainMinutes + "m remaining"
-        : minutes + "m remaining";
+        ? t("expiry.hoursRemaining", { h: hours, m: remainMinutes }, hours + "h " + remainMinutes + "m remaining")
+        : t("expiry.minsRemaining", { m: minutes }, minutes + "m remaining");
       return { text: text, isWarning: minutes < 60 };
     } catch (e) {
       return { text: expiresAt, isWarning: false };
@@ -48,14 +55,17 @@
     var html;
     if (state.neverExpires) {
       classes.push("expiry-badge--preserved");
-      html = '<span class="expiry-dot"></span>永久保留 <span aria-hidden="true">🔒</span>';
+      html =
+        '<span class="expiry-dot"></span>' +
+        escapeHtml(t("expiry.preserved", null, "Keep forever")) +
+        ' <span aria-hidden="true">🔒</span>';
       badge.removeAttribute("title");
     } else {
       var info = formatRelative(state.expiresAt);
       if (info.isWarning) classes.push("expiry-badge--warning");
       html = '<span class="expiry-dot"></span>' + escapeHtml(info.text);
       var abs = formatAbsolute(state.expiresAt);
-      if (abs) badge.setAttribute("title", "Expires at " + abs);
+      if (abs) badge.setAttribute("title", t("expiry.expiresAt", { time: abs }, "Expires at " + abs));
     }
     badge.className = classes.join(" ");
     badge.innerHTML = html;
@@ -71,6 +81,12 @@
     setInterval(function () {
       if (!state.neverExpires) renderBadge(badge, state);
     }, 60000);
+
+    if (window.AgentGateI18n && window.AgentGateI18n.onChange) {
+      window.AgentGateI18n.onChange(function () {
+        renderBadge(badge, state);
+      });
+    }
 
     return {
       node: badge,
@@ -117,7 +133,8 @@
     checkbox.checked = !!meta.neverExpires;
 
     var text = document.createElement("span");
-    text.textContent = "永久保留";
+    text.setAttribute("data-i18n", "expiry.ownerToggle");
+    text.textContent = t("expiry.ownerToggle", null, "Keep forever");
 
     var status = document.createElement("span");
     status.className = "owner-toggle-status";
@@ -129,7 +146,7 @@
     checkbox.addEventListener("change", function () {
       var desired = checkbox.checked;
       checkbox.disabled = true;
-      status.textContent = "更新中…";
+      status.textContent = t("expiry.updating", null, "Updating…");
       status.className = "owner-toggle-status";
 
       var endpoint = "/api/" + meta.kind + "/" + encodeURIComponent(meta.id);
@@ -144,19 +161,19 @@
         .then(function (resp) { return resp.json().then(function (b) { return { ok: resp.ok, body: b }; }); })
         .then(function (r) {
           if (!r.ok || !r.body || !r.body.success) {
-            throw new Error((r.body && r.body.error) || "更新失敗");
+            throw new Error((r.body && r.body.error) || t("expiry.updateFailed", null, "Update failed"));
           }
           var data = r.body.data || {};
           meta.neverExpires = !!data.never_expires;
           checkbox.checked = meta.neverExpires;
           badgeHandle.setNeverExpires(meta.neverExpires, data.expires_at);
-          status.textContent = "已儲存";
+          status.textContent = t("expiry.saved", null, "Saved");
           status.className = "owner-toggle-status owner-toggle-status--ok";
           setTimeout(function () { status.textContent = ""; }, 2000);
         })
         .catch(function (err) {
           checkbox.checked = meta.neverExpires; // revert
-          status.textContent = err && err.message ? err.message : "更新失敗";
+          status.textContent = err && err.message ? err.message : t("expiry.updateFailed", null, "Update failed");
           status.className = "owner-toggle-status owner-toggle-status--err";
         })
         .then(function () {

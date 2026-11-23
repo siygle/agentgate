@@ -60,6 +60,10 @@
     }
   }
 
+  function t(key, fallback) {
+    return window.AgentGateI18n ? window.AgentGateI18n.t(key) : fallback;
+  }
+
   function applyTheme(theme) {
     var html = document.documentElement;
     if (theme === "light" || theme === "dark") {
@@ -67,20 +71,8 @@
     } else {
       html.removeAttribute("data-theme");
     }
-
-    // Update highlight.js dark theme link to match manual override
-    var darkHlLink = document.querySelector(
-      'link[href*="highlight-github-dark"]'
-    );
-    if (darkHlLink) {
-      if (theme === "light") {
-        darkHlLink.media = "not all";
-      } else if (theme === "dark") {
-        darkHlLink.media = "all";
-      } else {
-        darkHlLink.media = "(prefers-color-scheme: dark)";
-      }
-    }
+    // Highlight.js CSS lives inside the render sandbox; sandbox.js's BRIDGE_SOURCE
+    // updates the inlined highlight-dark-css <style media> when it receives settings.
   }
 
   function applyFontSize(size) {
@@ -116,8 +108,10 @@
   function describe(settings) {
     var s = settings || loadSettings();
     var family = FONT_FAMILIES[s.fontFamily] || "";
+    var lang = window.AgentGateI18n ? window.AgentGateI18n.getLocale() : "en";
     return {
       theme: s.theme,
+      lang: lang,
       vars: {
         "--code-font-size": CODE_FONT_SIZES[s.fontSize] || CODE_FONT_SIZES.medium,
         "--content-font-size": CONTENT_FONT_SIZES[s.fontSize] || CONTENT_FONT_SIZES.medium,
@@ -158,8 +152,11 @@
     group.className = "settings-options";
     options.forEach(function (opt) {
       var btn = document.createElement("button");
+      btn.type = "button";
       btn.className = "settings-option" + (opt.value === currentValue ? " active" : "");
-      btn.textContent = opt.label;
+      btn.setAttribute("data-opt-value", opt.value);
+      if (opt.i18nKey) btn.setAttribute("data-i18n", opt.i18nKey);
+      btn.textContent = opt.i18nKey ? t(opt.i18nKey, opt.label) : opt.label;
       btn.addEventListener("click", function () {
         group.querySelectorAll(".settings-option").forEach(function (el) {
           el.classList.remove("active");
@@ -178,8 +175,10 @@
     trigger.className = "settings-trigger";
 
     var btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "settings-btn";
-    btn.title = "Display settings";
+    btn.setAttribute("data-i18n-title", "settings.title");
+    btn.title = t("settings.title", "Display settings");
     btn.innerHTML = gearSvg();
     trigger.appendChild(btn);
 
@@ -187,19 +186,49 @@
     panel.className = "settings-panel";
     panel.style.display = "none";
 
+    // Language
+    if (window.AgentGateI18n) {
+      var langSection = document.createElement("div");
+      langSection.className = "settings-section";
+      var langLabel = document.createElement("span");
+      langLabel.className = "settings-label";
+      langLabel.setAttribute("data-i18n", "lang.label");
+      langLabel.textContent = t("lang.label", "Language");
+      langSection.appendChild(langLabel);
+      var langGroup = buildOptionGroup(
+        [
+          { label: "English", value: "en" },
+          { label: "繁體中文", value: "zh-TW" },
+        ],
+        window.AgentGateI18n.getLocale(),
+        function (value) {
+          window.AgentGateI18n.setLocale(value);
+          notify(settings);
+        }
+      );
+      window.AgentGateI18n.onChange(function (loc) {
+        langGroup.querySelectorAll(".settings-option").forEach(function (el) {
+          el.classList.toggle("active", el.getAttribute("data-opt-value") === loc);
+        });
+      });
+      langSection.appendChild(langGroup);
+      panel.appendChild(langSection);
+    }
+
     // Theme
     var themeSection = document.createElement("div");
     themeSection.className = "settings-section";
     var themeLabel = document.createElement("span");
     themeLabel.className = "settings-label";
-    themeLabel.textContent = "Theme";
+    themeLabel.setAttribute("data-i18n", "settings.theme");
+    themeLabel.textContent = t("settings.theme", "Theme");
     themeSection.appendChild(themeLabel);
     themeSection.appendChild(
       buildOptionGroup(
         [
-          { label: "System", value: "system" },
-          { label: "Light", value: "light" },
-          { label: "Dark", value: "dark" },
+          { label: "System", i18nKey: "settings.themeSystem", value: "system" },
+          { label: "Light", i18nKey: "settings.themeLight", value: "light" },
+          { label: "Dark", i18nKey: "settings.themeDark", value: "dark" },
         ],
         settings.theme,
         function (value) {
@@ -217,14 +246,15 @@
     sizeSection.className = "settings-section";
     var sizeLabel = document.createElement("span");
     sizeLabel.className = "settings-label";
-    sizeLabel.textContent = "Font Size";
+    sizeLabel.setAttribute("data-i18n", "settings.fontSize");
+    sizeLabel.textContent = t("settings.fontSize", "Font Size");
     sizeSection.appendChild(sizeLabel);
     sizeSection.appendChild(
       buildOptionGroup(
         [
-          { label: "Small", value: "small" },
-          { label: "Medium", value: "medium" },
-          { label: "Large", value: "large" },
+          { label: "Small", i18nKey: "settings.sizeSmall", value: "small" },
+          { label: "Medium", i18nKey: "settings.sizeMedium", value: "medium" },
+          { label: "Large", i18nKey: "settings.sizeLarge", value: "large" },
         ],
         settings.fontSize,
         function (value) {
@@ -242,12 +272,13 @@
     familySection.className = "settings-section";
     var familyLabel = document.createElement("span");
     familyLabel.className = "settings-label";
-    familyLabel.textContent = "Font";
+    familyLabel.setAttribute("data-i18n", "settings.font");
+    familyLabel.textContent = t("settings.font", "Font");
     familySection.appendChild(familyLabel);
     familySection.appendChild(
       buildOptionGroup(
         [
-          { label: "System", value: "system" },
+          { label: "System", i18nKey: "settings.fontSystem", value: "system" },
           { label: "JetBrains", value: "JetBrains Mono" },
           { label: "Fira", value: "Fira Code" },
           { label: "Source", value: "Source Code Pro" },
@@ -263,7 +294,8 @@
     );
     var familyHint = document.createElement("p");
     familyHint.className = "settings-hint";
-    familyHint.textContent = "Applies if the font is installed on this device.";
+    familyHint.setAttribute("data-i18n", "settings.fontHint");
+    familyHint.textContent = t("settings.fontHint", "Applies if the font is installed on this device.");
     familySection.appendChild(familyHint);
     panel.appendChild(familySection);
 

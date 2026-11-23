@@ -26,10 +26,10 @@
 <div class="ag-doc-toolbar" id="ag-toolbar" hidden>
   <label class="ag-find">
     <span class="ag-find-icon" aria-hidden="true">⌕</span>
-    <input type="search" id="ag-find-input" placeholder="Find in diff" autocomplete="off" spellcheck="false">
+    <input type="search" id="ag-find-input" placeholder="Find in diff" data-i18n-placeholder="frame.findDiff" autocomplete="off" spellcheck="false">
     <span class="ag-find-count" id="ag-find-count"></span>
-    <button type="button" id="ag-find-prev" class="ag-find-nav" title="Previous match" aria-label="Previous match">↑</button>
-    <button type="button" id="ag-find-next" class="ag-find-nav" title="Next match" aria-label="Next match">↓</button>
+    <button type="button" id="ag-find-prev" class="ag-find-nav" title="Previous match" aria-label="Previous match" data-i18n-title="frame.prevMatch" data-i18n-aria-label="frame.prevMatch">↑</button>
+    <button type="button" id="ag-find-next" class="ag-find-nav" title="Next match" aria-label="Next match" data-i18n-title="frame.nextMatch" data-i18n-aria-label="frame.nextMatch">↓</button>
   </label>
 </div>
 
@@ -38,12 +38,12 @@
 
   <div class="diff-toolbar" id="ag-diff-toolbar">
     <div class="diff-toolbar-group">
-      <button type="button" class="diff-toolbar-btn" id="ag-view-split">Split</button>
-      <button type="button" class="diff-toolbar-btn" id="ag-view-unified">Unified</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-view-split" data-i18n="frame.diffSplit">Split</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-view-unified" data-i18n="frame.diffUnified">Unified</button>
     </div>
     <div class="diff-toolbar-group">
-      <button type="button" class="diff-toolbar-btn" id="ag-expand-all">Expand All</button>
-      <button type="button" class="diff-toolbar-btn" id="ag-collapse-all">Collapse All</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-expand-all" data-i18n="frame.diffExpandAll">Expand All</button>
+      <button type="button" class="diff-toolbar-btn" id="ag-collapse-all" data-i18n="frame.diffCollapseAll">Collapse All</button>
     </div>
   </div>
 
@@ -52,6 +52,7 @@
 
 <script src="agentgate:highlight"></script>
 <script src="agentgate:diff2html"></script>
+<script src="agentgate:i18n"></script>
 <script src="/static/renderers/common/frame-ui.js"></script>
 <script src="renderer.js"></script>
 </body>

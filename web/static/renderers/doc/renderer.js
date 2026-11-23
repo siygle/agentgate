@@ -115,7 +115,9 @@
     for (var i = 0; i < blocks.length; i++) hljs.highlightElement(blocks[i]);
   }
 
-  function renderMermaid(container) {
+  var lastMermaidDark = null;
+
+  function renderMermaid(container, forceRerender) {
     if (!container) return;
     // The library is only inlined when detectFeatures (share-kind.js) saw a diagram in the
     // payload. If detection missed one, say so in place of the diagram: a blank gap would
@@ -128,7 +130,8 @@
           var note = document.createElement("pre");
           note.className = "code-content ag-missing-lib";
           note.textContent =
-            "Diagram not rendered — the mermaid library was not loaded for this share.\n\n" +
+            UI.t("frame.missingMermaid", null, "Diagram not rendered — the mermaid library was not loaded for this share.") +
+            "\n\n" +
             (node.textContent || "");
           node.replaceWith(note);
         });
@@ -136,9 +139,28 @@
       return;
     }
     try {
-      mermaid.initialize({ startOnLoad: false, theme: UI.themeIsDark() ? "dark" : "default" });
+      var isDark = UI.themeIsDark();
       var nodes = container.querySelectorAll(".mermaid");
-      if (nodes.length) return mermaid.run({ nodes: nodes });
+      if (!nodes.length) return;
+      if (forceRerender && lastMermaidDark === isDark) return;
+
+      Array.prototype.forEach.call(nodes, function (node) {
+        var saved = node.getAttribute("data-ag-mermaid-src");
+        if (saved == null) {
+          saved = node.textContent || "";
+          node.setAttribute("data-ag-mermaid-src", saved);
+        } else if (forceRerender || node.getAttribute("data-processed") === "true") {
+          // Restore raw diagram syntax so mermaid.run() re-renders with the new theme.
+          node.removeAttribute("data-processed");
+          node.textContent = saved;
+        }
+      });
+
+      lastMermaidDark = isDark;
+      mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
+      return Promise.resolve(mermaid.run({ nodes: nodes })).then(function () {
+        Frame.reportHeight();
+      });
     } catch (e) {
       console.warn("Mermaid render failed", e);
     }
@@ -203,7 +225,8 @@
       var toolbar = document.createElement("div");
       toolbar.className = "plan-wireframe-toolbar";
       var label = document.createElement("span");
-      label.textContent = "Wireframe";
+      label.setAttribute("data-i18n", "frame.wireframe");
+      label.textContent = UI.t("frame.wireframe", null, "Wireframe");
       toolbar.appendChild(label);
       var frame = document.createElement("iframe");
       frame.className = "plan-wireframe-frame";
@@ -222,18 +245,63 @@
     return /\.mdx$/i.test((file && file.title) || "");
   }
 
+  function resolveRelativePath(baseFile, relPath) {
+    var raw = String(relPath || "").replace(/[?#].*$/, "");
+    if (!raw) return "";
+    var baseParts = String(baseFile || "").split("/");
+    baseParts.pop();
+    var segs = (raw.charAt(0) === "/" ? raw.slice(1) : baseParts.concat(raw.split("/")).join("/")).split("/");
+    var out = [];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (!s || s === ".") continue;
+      if (s === "..") {
+        if (out.length) out.pop();
+      } else {
+        out.push(s);
+      }
+    }
+    return out.join("/");
+  }
+
+  function resolveBundleFile(relPath) {
+    if (!relPath || !files.length) return null;
+    var candidates = [];
+    var curTitle = (current && current.title) || "";
+    var fromCur = resolveRelativePath(curTitle, relPath);
+    if (fromCur) candidates.push(fromCur);
+    var cleaned = normalizeAssetKey(relPath);
+    if (cleaned && candidates.indexOf(cleaned) === -1) candidates.push(cleaned);
+    var base = cleaned.split("/").pop();
+    for (var c = 0; c < candidates.length; c++) {
+      var target = candidates[c];
+      for (var i = 0; i < files.length; i++) {
+        if (normalizeAssetKey(files[i].title || "") === target) return files[i];
+      }
+    }
+    if (base) {
+      for (var j = 0; j < files.length; j++) {
+        var fBase = normalizeAssetKey(files[j].title || "").split("/").pop();
+        if (fBase === base) return files[j];
+      }
+    }
+    return null;
+  }
+
   function finishRenderedContent(node) {
     resolveAssets(node);
     promoteMermaidCodeBlocks(node);
     attachCodeHighlight(node);
+    UI.attachCodeBlockCopyButtons(node);
     renderWireframes(node);
     UI.assignHeadingIds(node);
+    UI.prepareLinks(node, { canResolveFile: resolveBundleFile });
     return renderMermaid(node);
   }
 
   function renderContentInto(node, content, file) {
     if (isMdxFile(file) && window.AgentGateMDX) {
-      node.innerHTML = '<div class="mdx-loading">Rendering MDX…</div>';
+      node.innerHTML = '<div class="mdx-loading">' + UI.escapeHtml(UI.t("frame.renderingMdx", null, "Rendering MDX…")) + "</div>";
       return window.AgentGateMDX
         .renderMdxInto(node, content || "")
         .then(function () {
@@ -268,7 +336,8 @@
     var wrap = document.createElement("aside");
     wrap.className = "plan-sidebar";
     var title = document.createElement("h2");
-    title.textContent = "Files";
+    title.setAttribute("data-i18n", "common.files");
+    title.textContent = UI.t("common.files", null, "Files");
     wrap.appendChild(title);
     var list = document.createElement("ul");
     list.className = "plan-file-tree";
@@ -348,16 +417,31 @@
   };
 
   // Re-theme diagrams when the host's theme setting changes; mermaid bakes colours into
-  // the generated SVG, so it has to re-run.
+  // the generated SVG, so it has to re-run from the saved diagram source.
   Frame.onSettings = function () {
-    renderMermaid(article);
+    renderMermaid(article, true);
   };
 
   // --- boot -------------------------------------------------------------------------
 
   var sidebar = buildSidebar();
   if (sidebar) layout.insertBefore(sidebar, article);
-  UI.wireAnchors(article);
+  UI.wireAnchors(article, {
+    onFileLink: function (path, hash) {
+      var target = resolveBundleFile(path);
+      if (!target) return;
+      selectFile(target).then(function () {
+        if (hash) {
+          UI.scrollToHash(hash);
+          Frame.reportHash(hash);
+        }
+      });
+    },
+  });
+
+  if (window.AgentGateI18n && window.AgentGateI18n.applyDom) {
+    window.AgentGateI18n.applyDom(document);
+  }
 
   selectFile(current).then(function () {
     if (boot.hash) UI.scrollToHash(boot.hash);

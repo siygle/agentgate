@@ -71,6 +71,10 @@
     }
   }
 
+  function t(key, fallback) {
+    return window.AgentGateI18n ? window.AgentGateI18n.t(key) : fallback;
+  }
+
   function showPassphraseDialog(onSubmit, options) {
     options = options || {};
     var errorMsg = options.error || null;
@@ -94,33 +98,58 @@
 
     modal.innerHTML =
       '<form id="passphrase-form">' +
-      "<h2 style=\"font-size:1.25rem;font-weight:600;margin-bottom:0.5rem\">" +
+      '<div class="passphrase-modal-head">' +
+      '<h2 style="font-size:1.25rem;font-weight:600;margin:0">' +
       lockSvg +
-      "Enter passphrase</h2>" +
-      '<p class="text-sm text-muted" style="margin-bottom:1rem">This content is encrypted. Enter the passphrase to view it.</p>' +
+      '<span data-i18n="passphrase.title"></span></h2>' +
+      '<span id="passphrase-lang-slot"></span>' +
+      "</div>" +
+      '<p class="text-sm text-muted" style="margin-bottom:1rem" data-i18n="passphrase.hint"></p>' +
       '<div style="margin-bottom:1rem">' +
-      '<input type="password" id="passphrase-input" placeholder="Passphrase" autocomplete="off" ' +
-      'class="form-input" style="width:100%;box-sizing:border-box" />' +
+      '<input type="password" id="passphrase-input" autocomplete="off" ' +
+      'class="form-input" style="width:100%;box-sizing:border-box" data-i18n-placeholder="passphrase.placeholder" />' +
       "</div>" +
       '<div style="margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">' +
       '<input type="checkbox" id="passphrase-remember" checked />' +
-      '<label for="passphrase-remember" class="text-sm">Remember in this browser</label>' +
+      '<label for="passphrase-remember" class="text-sm" data-i18n="passphrase.remember"></label>' +
       "</div>" +
       '<div id="passphrase-error" class="text-sm" style="color:var(--danger,#ef4444);margin-bottom:0.75rem;display:' +
       (errorMsg ? "block" : "none") +
-      '">' +
-      (errorMsg || "") +
-      "</div>" +
-      '<button type="submit" id="passphrase-submit" class="btn btn-primary" ' +
-      'style="width:100%"' +
+      '"></div>' +
+      '<button type="submit" id="passphrase-submit" class="btn btn-primary" style="width:100%"' +
       (isDecrypting ? " disabled" : "") +
-      ">" +
-      (isDecrypting ? "Decrypting..." : "Decrypt") +
-      "</button>" +
+      "></button>" +
       "</form>";
 
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
+
+    var errorEl = document.getElementById("passphrase-error");
+    if (errorEl && errorMsg) errorEl.textContent = errorMsg;
+
+    var submitBtn = document.getElementById("passphrase-submit");
+    if (submitBtn) {
+      var btnKey = isDecrypting ? "passphrase.decrypting" : "passphrase.decrypt";
+      submitBtn.setAttribute("data-i18n", btnKey);
+      submitBtn.textContent = t(btnKey, isDecrypting ? "Decrypting..." : "Decrypt");
+    }
+
+    var langSlot = document.getElementById("passphrase-lang-slot");
+    if (langSlot && window.AgentGateI18n) {
+      langSlot.appendChild(window.AgentGateI18n.createSwitcher());
+    }
+    if (window.AgentGateI18n) {
+      window.AgentGateI18n.applyDom(modal);
+    } else {
+      var titleSpan = modal.querySelector('[data-i18n="passphrase.title"]');
+      if (titleSpan) titleSpan.textContent = "Enter passphrase";
+      var hintEl = modal.querySelector('[data-i18n="passphrase.hint"]');
+      if (hintEl) hintEl.textContent = "This content is encrypted. Enter the passphrase to view it.";
+      var remEl = modal.querySelector('[data-i18n="passphrase.remember"]');
+      if (remEl) remEl.textContent = "Remember in this browser";
+      var inp = document.getElementById("passphrase-input");
+      if (inp) inp.placeholder = "Passphrase";
+    }
 
     var input = document.getElementById("passphrase-input");
     if (input) input.focus();
@@ -149,7 +178,8 @@
     var btn = document.getElementById("passphrase-submit");
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Decrypt";
+      btn.setAttribute("data-i18n", "passphrase.decrypt");
+      btn.textContent = t("passphrase.decrypt", "Decrypt");
     }
     var input = document.getElementById("passphrase-input");
     if (input) {
@@ -162,7 +192,8 @@
     var btn = document.getElementById("passphrase-submit");
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "Decrypting...";
+      btn.setAttribute("data-i18n", "passphrase.decrypting");
+      btn.textContent = t("passphrase.decrypting", "Decrypting...");
     }
     var input = document.getElementById("passphrase-input");
     if (input) input.disabled = true;

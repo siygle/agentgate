@@ -145,12 +145,10 @@
     "highlight-css": { file: "highlight-github.min.css", type: "css" },
     "highlight-dark-css": { file: "highlight-github-dark.min.css", type: "css" },
     "diff2html-css": { file: "diff2html.min.css", type: "css" },
-    // AgentGate's own stylesheets, split by audience: `tokens` holds the design tokens
-    // and base typography shared with the host page, `renderer` holds the styles for
-    // decrypted content. Built-in renderers link both; an uploaded webapp may link them
-    // too if it wants to match AgentGate's look.
+    // AgentGate's own stylesheets and lightweight i18n helper.
     tokens: { file: "tokens.css", type: "css", dir: "css" },
     renderer: { file: "renderer.css", type: "css", dir: "css" },
+    i18n: { file: "i18n.js", type: "js", dir: "js" },
   };
 
   // buildBuiltinIndex expands each library into every spelling we accept, so all of
@@ -291,15 +289,32 @@
     "    savePref:function(k,v){send(M.pref,{key:k,value:v});}};",
     "  window.AgentGateFrame=api;",
     // Settings are applied here rather than in each renderer: they are only CSS custom
-    // properties plus the theme attribute, and tokens.css/renderer.css read them the
-    // same way inside the frame as on the host page.
+    // properties, the theme/lang attributes, and highlight.js's dark-theme media query.
     "  api.applySettings=function(s){",
     "    if(!s)return;var el=document.documentElement;if(!el)return;",
     "    if(s.theme==='light'||s.theme==='dark'){el.setAttribute('data-theme',s.theme);}",
     "    else{el.removeAttribute('data-theme');}",
+    "    var darkHl=document.querySelectorAll('style[data-agentgate-builtin*=\"highlight-dark-css\"]');",
+    "    for(var i=0;i<darkHl.length;i++){",
+    "      darkHl[i].setAttribute('media',s.theme==='light'?'not all':s.theme==='dark'?'all':'(prefers-color-scheme: dark)');}",
+    "    if(s.lang){el.setAttribute('lang',s.lang);",
+    "      if(window.AgentGateI18n&&window.AgentGateI18n.setLocale){",
+    "        window.AgentGateI18n.setLocale(s.lang,{persist:false});}}",
     "    var v=s.vars||{};Object.keys(v).forEach(function(k){",
     "      if(v[k]){el.style.setProperty(k,v[k]);}else{el.style.removeProperty(k);}});",
     "  };",
+    // Bubble-phase fallback for links inside ANY sandboxed document (including uploaded
+    // webapps and raw HTML in MDX). Navigating the <iframe srcdoc> itself to an external
+    // URL hits X-Frame-Options/frame-ancestors and replaces the post with an error page.
+    // Checking ev.defaultPrevented preserves SPA routers and built-in renderer handlers.
+    "  document.addEventListener('click',function(ev){",
+    "    if(!ev||ev.defaultPrevented||ev.button!==0||ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.altKey)return;",
+    "    var a=ev.target&&ev.target.closest?ev.target.closest('a[href]'):null;if(!a)return;",
+    "    var href=(a.getAttribute('href')||'').trim();if(!href)return;",
+    "    var target=(a.getAttribute('target')||'').toLowerCase();",
+    "    if(/^(https?:|mailto:|tel:)/i.test(href)&&target!=='_blank'){",
+    "      ev.preventDefault();try{window.open(href,'_blank','noopener,noreferrer');}catch(e){}}",
+    "  });",
     "  window.addEventListener('message',function(ev){",
     "    var d=ev&&ev.data;if(!d)return;",
     // Legacy shape: pre-bridge frames were asked for height via a bare flag key.
@@ -345,6 +360,8 @@
 
     function inlineStyle(el, text, label) {
       var style = doc.createElement("style");
+      var media = el.getAttribute("media");
+      if (media) style.setAttribute("media", media);
       if (label) style.setAttribute("data-agentgate-builtin", label);
       // Only payload stylesheets can reference payload assets; server assets cannot.
       style.textContent = escapeStyleText(label ? text : inlineCSSUrls(text, map));
@@ -647,8 +664,12 @@
     frame.className = opts.className || "app-frame";
     // No allow-same-origin: the frame runs in an opaque origin so it cannot reach this
     // decryption page or other shares. localStorage/cookies are therefore unavailable
-    // to framed code by design.
-    frame.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups");
+    // to framed code by design. allow-popups-to-escape-sandbox lets links opened in a
+    // new tab load as normal top-level tabs instead of inheriting sandbox restrictions.
+    frame.setAttribute(
+      "sandbox",
+      "allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+    );
     if (opts.autoHeight) frame.classList.add("app-frame--auto");
     frame.setAttribute("srcdoc", html);
     container.appendChild(frame);
@@ -824,6 +845,7 @@
       mentionsFeature: mentionsFeature,
       escapeScriptText: escapeScriptText,
       escapeStyleText: escapeStyleText,
+      resolveRefs: resolveRefs,
       buildFileMap: buildFileMap,
       lookup: lookup,
       toDataURI: toDataURI,

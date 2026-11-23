@@ -40,6 +40,10 @@
     ].join("\n");
   }
 
+  function t(key, fallback) {
+    return window.AgentGateI18n ? window.AgentGateI18n.t(key) : fallback;
+  }
+
   function byId(id) {
     return document.getElementById(id);
   }
@@ -48,7 +52,7 @@
     byId("setup-content").textContent = getSetupText();
     byId("setup-modal").style.display = "flex";
     var copyBtn = byId("setup-copy-btn");
-    copyBtn.textContent = "Copy";
+    copyBtn.textContent = t("common.copy", "Copy");
     // Move focus into the dialog so keyboard and screen-reader users land there.
     copyBtn.focus();
   }
@@ -61,23 +65,36 @@
     var text = getSetupText();
     var btn = byId("setup-copy-btn");
     if (!navigator.clipboard) {
-      btn.textContent = "Copy failed";
+      btn.textContent = t("common.copyFailed", "Copy failed");
       return;
     }
     navigator.clipboard.writeText(text).then(
       function () {
-        btn.textContent = "Copied";
+        btn.textContent = t("common.copied", "Copied");
         setTimeout(function () {
-          btn.textContent = "Copy";
+          btn.textContent = t("common.copy", "Copy");
         }, 2000);
       },
       function () {
-        btn.textContent = "Copy failed";
+        btn.textContent = t("common.copyFailed", "Copy failed");
       }
     );
   }
 
+  function applyTitle() {
+    document.title = t("landing.title", "AgentGate - Encrypted diff & file sharing");
+  }
+
   function wire() {
+    var I = window.AgentGateI18n;
+    if (I) {
+      var slot = byId("landing-lang-slot");
+      if (slot) slot.appendChild(I.createSwitcher());
+      I.applyDom(document);
+      applyTitle();
+      I.onChange(applyTitle);
+    }
+
     var openButtons = document.querySelectorAll("[data-setup-open]");
     for (var i = 0; i < openButtons.length; i++) {
       openButtons[i].addEventListener("click", openSetupModal);
