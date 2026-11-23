@@ -1,7 +1,18 @@
-.PHONY: build server cli clean dev docker
+.PHONY: build server cli clean dev docker test
 
 # Default target
 build: server cli
+
+test:
+	go test -race ./...
+	node web/static/js/sandbox.node.test.mjs
+	node web/static/js/share-kind.node.test.mjs
+	node web/static/js/passphrase.node.test.mjs
+	node web/static/js/crypto.node.test.mjs
+	node web/static/js/i18n.node.test.mjs
+	node web/static/renderers/common/frame-ui.node.test.mjs
+	go run ./cmd/crossvector > /tmp/agentgate-crossvector.json && node web/static/js/crypto.crossvector.test.mjs /tmp/agentgate-crossvector.json && rm -f /tmp/agentgate-crossvector.json
+	cd worker && npm run typecheck && npm test
 
 server:
 	go build -o bin/agentgate-server ./cmd/server

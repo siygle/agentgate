@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go-and-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Go unit tests
+        run: go test -race ./...
+
+      - name: Frontend unit tests
+        run: |
+          node web/static/js/sandbox.node.test.mjs
+          node web/static/js/share-kind.node.test.mjs
+          node web/static/js/passphrase.node.test.mjs
+          node web/static/js/crypto.node.test.mjs
+          node web/static/js/i18n.node.test.mjs
+          node web/static/renderers/common/frame-ui.node.test.mjs
+
+      - name: Go <-> JS v2 crypto crossvector
+        run: |
+          go run ./cmd/crossvector > /tmp/agentgate-crossvector.json
+          node web/static/js/crypto.crossvector.test.mjs /tmp/agentgate-crossvector.json
+          rm -f /tmp/agentgate-crossvector.json
+
+      - name: Contract tests against Go server
+        run: |
+          go build -o /tmp/agentgate-server ./cmd/server
+          AGENTGATE_SESSION_SECRET=ci-session-secret AGENTGATE_OWNER_KEY=ci-owner-key \
+            /tmp/agentgate-server --port 18080 --base-url http://127.0.0.1:18080 --db /tmp/ci-agentgate.db &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID 2>/dev/null || true" EXIT
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:18080/ >/dev/null; then break; fi
+            sleep 0.2
+          done
+          ADMIN_OWNER_KEY=ci-owner-key node test/contract/run.mjs http://127.0.0.1:18080
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
