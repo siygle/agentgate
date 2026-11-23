@@ -148,7 +148,7 @@ func refreshRecords(recs []shareRecord, serverFlag string) bool {
 			continue
 		}
 		endpoint := strings.TrimRight(base, "/") + "/api/" + recs[i].Kind + "/" + recs[i].ID
-		resp, err := http.Get(endpoint)
+		resp, err := cliHTTPClient.Get(endpoint)
 		if err != nil {
 			recs[i].Status = "unreachable"
 			continue
@@ -241,14 +241,11 @@ func runRekey(args []string) {
 		os.Exit(1)
 	}
 
-	// Resolve kind (needed for the API endpoint).
+	// Resolve kind (may still be empty for /s/{id} URLs not in the local registry;
+	// fetchShareForRekey resolves it via GET /api/share/{id}).
 	kind := kindFromURL
 	if kind == "" && haveRec {
 		kind = rec.Kind
-	}
-	if kind == "" {
-		fmt.Fprintln(os.Stderr, "error: unknown share type; pass the full share URL so the type can be inferred")
-		os.Exit(1)
 	}
 
 	// Resolve server.
@@ -327,63 +324,33 @@ func runRekey(args []string) {
 		os.Exit(1)
 	}
 
-	// 1) Fetch current ciphertext.
-	base := strings.TrimRight(server, "/")
-	getURL := base + "/api/" + kind + "/" + id
-	resp, err := http.Get(getURL)
+	// 1) Fetch current ciphertext (and auto-resolve kind for /s/{id} shares).
+	resolvedKind, rawEnc, err := fetchShareForRekey(cliHTTPClient, server, kind, id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error fetching share: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "error: share not found or unavailable (http %d)\n", resp.StatusCode)
-		os.Exit(1)
-	}
-	var gr struct {
-		Success bool `json:"success"`
-		Data    struct {
-			EncryptedData encBlob `json:"encrypted_data"`
-		} `json:"data"`
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &gr); err != nil || !gr.Success {
-		fmt.Fprintf(os.Stderr, "error: unexpected server response: %s\n", string(body))
-		os.Exit(1)
-	}
+	kind = resolvedKind
 
-	// 2) Decrypt with old passphrase (local; never sent).
-	plaintext, err := crypto.Decrypt(
-		gr.Data.EncryptedData.Ciphertext,
-		gr.Data.EncryptedData.IV,
-		gr.Data.EncryptedData.Salt,
-		oldPass,
-	)
+	// 2-3) Re-key locally (supports both v1 blobs and v2 recovery-capable envelopes).
+	newEnc, err := rekeyEncryptedData(rawEnc, oldPass, newPass)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error: could not decrypt with the current passphrase — nothing was changed.")
-		os.Exit(1)
-	}
-
-	// 3) Re-encrypt with new passphrase.
-	ct, iv, salt, err := crypto.Encrypt(plaintext, newPass)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error re-encrypting: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// 4) PUT the new ciphertext (owner-token authenticated).
-	putBody, _ := json.Marshal(map[string]any{
-		"encrypted_data": map[string]string{"ciphertext": ct, "iv": iv, "salt": salt},
-	})
-	req, err := http.NewRequest(http.MethodPut, getURL, bytes.NewReader(putBody))
+	base := strings.TrimRight(server, "/")
+	putURL := base + "/api/" + kind + "/" + id
+	putBody, _ := json.Marshal(map[string]any{"encrypted_data": newEnc})
+	req, err := http.NewRequest(http.MethodPut, putURL, bytes.NewReader(putBody))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error building request: %v\n", err)
 		os.Exit(1)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+ownerToken)
-	putResp, err := http.DefaultClient.Do(req)
+	putResp, err := cliHTTPClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error sending update: %v\n", err)
 		os.Exit(1)
@@ -413,6 +380,80 @@ func runRekey(args []string) {
 			}
 		}
 	}
+}
+
+// fetchShareForRekey retrieves a share's encrypted_data and resolves its kind.
+// When kind is empty (e.g. a /s/{id} URL not in the local registry), it queries
+// the kind-agnostic /api/share/{id} endpoint.
+func fetchShareForRekey(client *http.Client, server, kind, id string) (string, json.RawMessage, error) {
+	base := strings.TrimRight(server, "/")
+	endpoint := base + "/api/share/" + id
+	if kind != "" {
+		endpoint = base + "/api/" + kind + "/" + id
+	}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return "", nil, fmt.Errorf("fetching share: %w", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, fmt.Errorf("share not found or unavailable (http %d)", resp.StatusCode)
+	}
+	var gr struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Kind          string          `json:"kind"`
+			EncryptedData json.RawMessage `json:"encrypted_data"`
+		} `json:"data"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &gr); err != nil || !gr.Success || len(gr.Data.EncryptedData) == 0 {
+		return "", nil, fmt.Errorf("unexpected server response: %s", string(body))
+	}
+	resolvedKind := kind
+	if resolvedKind == "" {
+		resolvedKind = gr.Data.Kind
+	}
+	if resolvedKind == "" {
+		return "", nil, fmt.Errorf("server did not report share kind")
+	}
+	return resolvedKind, gr.Data.EncryptedData, nil
+}
+
+// rekeyEncryptedData rotates a share's passphrase locally. For v2 envelopes it
+// unwraps the DEK with oldPass and re-wraps it under newPass, keeping ciphertext,
+// iv, and wrap_recov intact; for v1 blobs it decrypts and re-encrypts.
+func rekeyEncryptedData(raw json.RawMessage, oldPass, newPass string) (any, error) {
+	var env crypto.Envelope
+	if err := json.Unmarshal(raw, &env); err == nil && env.V == 2 && env.WrapPass != "" {
+		dek, err := crypto.UnwrapDEKPassphrase(env, oldPass)
+		if err != nil {
+			return nil, fmt.Errorf("could not decrypt with the current passphrase — nothing was changed")
+		}
+		salt, ivP, wrapPass, err := crypto.WrapDEKPassphrase(dek, newPass)
+		if err != nil {
+			return nil, fmt.Errorf("re-wrapping content key: %w", err)
+		}
+		env.Salt = salt
+		env.IVP = ivP
+		env.WrapPass = wrapPass
+		return env, nil
+	}
+
+	var blob encBlob
+	if err := json.Unmarshal(raw, &blob); err != nil || blob.Ciphertext == "" {
+		return nil, fmt.Errorf("unrecognized encrypted_data format")
+	}
+	plaintext, err := crypto.Decrypt(blob.Ciphertext, blob.IV, blob.Salt, oldPass)
+	if err != nil {
+		return nil, fmt.Errorf("could not decrypt with the current passphrase — nothing was changed")
+	}
+	ct, iv, salt, err := crypto.Encrypt(plaintext, newPass)
+	if err != nil {
+		return nil, fmt.Errorf("re-encrypting: %w", err)
+	}
+	return map[string]string{"ciphertext": ct, "iv": iv, "salt": salt}, nil
 }
 
 // ---------------------------------------------------------------------------

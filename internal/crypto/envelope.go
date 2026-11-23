@@ -227,23 +227,32 @@ func EncryptEnvelope(plaintext, passphrase, recoveryPubB64 string) (Envelope, er
 	return env, nil
 }
 
-// DecryptEnvelope decrypts a v2 Envelope using the passphrase path.
-func DecryptEnvelope(env Envelope, passphrase string) (string, error) {
+// UnwrapDEKPassphrase unwraps the content DEK from a v2 Envelope using the passphrase.
+func UnwrapDEKPassphrase(env Envelope, passphrase string) ([]byte, error) {
 	salt, err := base64.StdEncoding.DecodeString(env.Salt)
 	if err != nil {
-		return "", fmt.Errorf("decode salt: %w", err)
+		return nil, fmt.Errorf("decode salt: %w", err)
 	}
 	ivP, err := base64.StdEncoding.DecodeString(env.IVP)
 	if err != nil {
-		return "", fmt.Errorf("decode iv_p: %w", err)
+		return nil, fmt.Errorf("decode iv_p: %w", err)
 	}
 	wrapPass, err := base64.StdEncoding.DecodeString(env.WrapPass)
 	if err != nil {
-		return "", fmt.Errorf("decode wrap_pass: %w", err)
+		return nil, fmt.Errorf("decode wrap_pass: %w", err)
 	}
 	dek, err := aesGCMOpen(deriveKey(passphrase, salt), ivP, wrapPass)
 	if err != nil {
-		return "", fmt.Errorf("unwrap dek: %w", err)
+		return nil, fmt.Errorf("unwrap dek: %w", err)
+	}
+	return dek, nil
+}
+
+// DecryptEnvelope decrypts a v2 Envelope using the passphrase path.
+func DecryptEnvelope(env Envelope, passphrase string) (string, error) {
+	dek, err := UnwrapDEKPassphrase(env, passphrase)
+	if err != nil {
+		return "", err
 	}
 	ivC, err := base64.StdEncoding.DecodeString(env.IV)
 	if err != nil {

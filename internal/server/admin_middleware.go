@@ -112,12 +112,29 @@ func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{hits: map[string][]int64{}, limit: limit, windowS: int64(window.Seconds())}
 }
 
+const maxRateLimiterKeys = 1024
+
 // allow records an attempt for key and reports whether it is within the limit.
 func (rl *rateLimiter) allow(key string) bool {
 	now := time.Now().Unix()
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	cutoff := now - rl.windowS
+	if len(rl.hits) > maxRateLimiterKeys {
+		for k, times := range rl.hits {
+			fresh := times[:0]
+			for _, t := range times {
+				if t > cutoff {
+					fresh = append(fresh, t)
+				}
+			}
+			if len(fresh) == 0 {
+				delete(rl.hits, k)
+			} else {
+				rl.hits[k] = fresh
+			}
+		}
+	}
 	kept := rl.hits[key][:0]
 	for _, t := range rl.hits[key] {
 		if t > cutoff {

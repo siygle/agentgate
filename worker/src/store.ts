@@ -298,15 +298,16 @@ export async function deleteShareById(env: Env, kind: Kind, id: string): Promise
 }
 
 // deleteExpired removes expired rows from both tables (and their R2 blobs, for
-// rows that have one). Rows with never_expires = 1 are skipped. Returns the
-// number of deleted records.
+// rows that have one). Rows with never_expires = 1 are skipped. Uses DELETE ... RETURNING
+// so only blobs belonging to rows that were atomically deleted are unlinked — preventing
+// a concurrent "keep forever" toggle from losing its R2 blob while its D1 row survives.
 export async function deleteExpired(env: Env): Promise<number> {
   const now = nowSeconds();
   let total = 0;
   for (const kind of ["diff", "files"] as Kind[]) {
     const table = TABLE[kind];
     const { results } = await env.DB.prepare(
-      `SELECT r2_key FROM ${table} WHERE never_expires = 0 AND expired_at <= ?`,
+      `DELETE FROM ${table} WHERE never_expires = 0 AND expired_at <= ? RETURNING r2_key`,
     )
       .bind(now)
       .all<{ r2_key: string }>();
@@ -317,9 +318,6 @@ export async function deleteExpired(env: Env): Promise<number> {
     if (r2Keys.length > 0 && env.BLOBS) {
       await env.BLOBS.delete(r2Keys);
     }
-    await env.DB.prepare(`DELETE FROM ${table} WHERE never_expires = 0 AND expired_at <= ?`)
-      .bind(now)
-      .run();
     total += rows.length;
   }
   return total;

@@ -25,6 +25,9 @@ import (
 // to estimate expires_at for the local registry when no -t is given.
 const defaultTTLSeconds = 7 * 24 * 60 * 60
 
+// cliHTTPClient bounds outbound CLI requests so a stalled network cannot hang forever.
+var cliHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
 // DiffPayload is the JSON body sent to POST /api/diff.
 type DiffPayload struct {
 	Title string            `json:"title"`
@@ -342,7 +345,7 @@ func encryptAndPostMode(server, endpoint string, payload any, passphrase, master
 	bodyBytes, _ := json.Marshal(body)
 
 	url := strings.TrimRight(server, "/") + endpoint
-	resp, err := http.Post(url, "application/json", bytes.NewReader(bodyBytes))
+	resp, err := cliHTTPClient.Post(url, "application/json", bytes.NewReader(bodyBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error posting to %s: %v\n", url, err)
 		os.Exit(1)

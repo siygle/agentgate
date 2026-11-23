@@ -25,6 +25,10 @@ import (
 // MaxBytesReader ceiling trips.
 const uploadSlack = 64 << 10
 
+// maxControlBodyBytes bounds small JSON control endpoints (PATCH, admin actions, login)
+// so an unauthenticated or misbehaving client cannot force unbounded body reads.
+const maxControlBodyBytes = 64 << 10
+
 // decodeCreateBody reads a create/replace JSON body under a hard size ceiling,
 // returning ok=false (after writing the response) on malformed or oversized
 // input so callers can simply return.
@@ -404,6 +408,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request, kind strin
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBodyBytes)
 	var req updateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})

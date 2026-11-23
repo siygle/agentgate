@@ -257,7 +257,7 @@ third-party script origin.
 
 ## CORS
 
-The **public share API** (`/api/diff*`, `/api/files*`) and pages use permissive,
+The **public share API** (`/api/diff*`, `/api/files*`, `/api/share/*`) and pages use permissive,
 self-hosted-tool defaults: `Access-Control-Allow-Origin: *`, methods
 `GET, POST, PATCH, PUT, DELETE, OPTIONS`, headers `Content-Type, Authorization`.
 

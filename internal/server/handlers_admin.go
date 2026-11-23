@@ -86,6 +86,7 @@ func (s *Server) handleOwnerKeyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBodyBytes)
 	var req ownerKeyLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
@@ -198,6 +199,7 @@ func (s *Server) handleAdminKeepForever(w http.ResponseWriter, r *http.Request) 
 	}
 	recordID := chi.URLParam(r, "id")
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBodyBytes)
 	var req updateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
@@ -358,6 +360,7 @@ func (s *Server) handleAdminReshare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional body controls the new record's expiry (defaults to fresh 7d TTL).
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBodyBytes)
 	var req reshareRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})
@@ -496,6 +499,7 @@ func (s *Server) handleAdminResetReshare(w http.ResponseWriter, r *http.Request)
 	}
 	recordID := chi.URLParam(r, "id")
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBodyBytes)
 	var req resetReshareRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Error: "invalid JSON body"})

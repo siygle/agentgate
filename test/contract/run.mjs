@@ -192,6 +192,7 @@ async function main() {
 
   // --- kind-agnostic lookup (backs /s/{id}) ---
   r = await fetch(`${BASE}/api/share/${fileId}`);
+  check("GET /api/share/{id} sends permissive CORS header", r.headers.get("access-control-allow-origin") === "*");
   body = await r.json();
   check("GET /api/share/{id} finds a file bundle", r.status === 200 && body.data?.kind === "files");
   check("GET /api/share/{id} returns the ciphertext", !!body.data?.encrypted_data?.ciphertext);

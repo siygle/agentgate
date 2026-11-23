@@ -99,9 +99,17 @@ function checkOrigin(c: Ctx): boolean {
 // Cloudflare WAF/Access in front is the real control; this just slows trivial
 // brute force within one isolate.
 const loginHits = new Map<string, number[]>();
+const MAX_RATE_LIMIT_IPS = 1024;
 function rateLimitAllow(ip: string, limit = 5, windowSec = 60): boolean {
   const now = nowSeconds();
   const cutoff = now - windowSec;
+  if (loginHits.size > MAX_RATE_LIMIT_IPS) {
+    for (const [k, times] of loginHits) {
+      const fresh = times.filter((t) => t > cutoff);
+      if (fresh.length === 0) loginHits.delete(k);
+      else loginHits.set(k, fresh);
+    }
+  }
   const kept = (loginHits.get(ip) ?? []).filter((t) => t > cutoff);
   if (kept.length >= limit) {
     loginHits.set(ip, kept);

@@ -36,6 +36,7 @@ app.use("/api/diff", publicCors);
 app.use("/api/diff/*", publicCors);
 app.use("/api/files", publicCors);
 app.use("/api/files/*", publicCors);
+app.use("/api/share/*", publicCors);
 
 // ---------------------------------------------------------------------------
 // Helpers
