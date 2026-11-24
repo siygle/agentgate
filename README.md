@@ -1,7 +1,7 @@
 # AgentGate
 
 Self-hosted, end-to-end encrypted sharing for the things a coding agent produces — diffs,
-files, documents, plans, and runnable prototypes.
+files, documents, plans, interactive artifacts, and runnable prototypes.
 
 Content is encrypted on your machine with AES-256-GCM before upload. The server only ever
 stores ciphertext, and never sees the passphrase. Recipients open a link, enter the
@@ -38,8 +38,9 @@ agentgate key-gen && source ~/.zshrc   # first time only
 agentgate git-latest              # latest commit diff
 agentgate git-staged              # staged changes
 agentgate files src/foo.ts        # arbitrary files
-agentgate docs ./notes.md         # Markdown/MDX documents
+agentgate docs ./notes.md         # Markdown/MDX documents (with Mermaid & KaTeX math)
 agentgate plan ./plans/my-plan    # a reviewable visual plan
+agentgate artifact ./App.tsx      # zero-build React/JSX/TSX, SVG, or Mermaid artifact
 agentgate webapp ./dist           # a runnable static prototype
 
 agentgate files -t 24h src/foo.ts     # custom TTL
@@ -53,11 +54,14 @@ payload.
 
 | Command | Renders as |
 |---------|-----------|
-| `git-latest`, `git-staged` | Split/unified diff with syntax highlighting |
+| `git-latest`, `git-staged` | Split/unified diff with syntax highlighting, per-file viewed checkboxes, and inline line comments (copyable for your agent) |
 | `files` | File browser with markdown preview and per-block copy |
-| `docs` | Markdown/MDX document, as written |
-| `plan` | Visual plan — MDX components, mermaid diagrams, review notes |
-| `webapp` | A self-contained static page, run in the sandbox |
+| `docs` | Markdown/MDX document with Mermaid diagrams, KaTeX math, and section review comments |
+| `plan` | Visual plan — MDX components, Mermaid diagrams, KaTeX math, and review notes |
+| `artifact` | Zero-build interactive React/JSX/TSX apps (Tailwind, Lucide, Recharts, Chart.js, KaTeX), SVG, or Mermaid diagrams — with live source editor, console diagnostics, and offline `window.storage` |
+| `webapp` | A self-contained static page run in the sandbox, with live source inspector and console diagnostics |
+
+Built-in libraries are vendored and lazy-gated so shares only inline what they use, and the viewer UI supports both English and Traditional Chinese (`EN` / `繁中`).
 
 ## Documentation
 
