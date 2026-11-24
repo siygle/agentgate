@@ -142,6 +142,15 @@
     // React + @mdx-js/mdx, for the built-in doc renderer's MDX path. Built by
     // tools/mdx-bundle; exposes AgentGateMDXVendor rather than a library global.
     mdx: { file: "mdx-runtime.bundle.js", type: "js" },
+    // Artifact runtime & optional libraries (built by tools/artifact-bundle).
+    // Each is individually lazy-gated so shares only inline what they use.
+    "artifact-runtime": { file: "artifact-runtime.bundle.js", type: "js" },
+    tailwind: { file: "twind.bundle.js", type: "js" },
+    lucide: { file: "lucide-react.bundle.js", type: "js" },
+    chartjs: { file: "chartjs.bundle.js", type: "js" },
+    recharts: { file: "recharts.bundle.js", type: "js" },
+    katex: { file: "katex.bundle.js", type: "js" },
+    "katex-css": { file: "katex.min.css", type: "css" },
     "highlight-css": { file: "highlight-github.min.css", type: "css" },
     "highlight-dark-css": { file: "highlight-github-dark.min.css", type: "css" },
     "diff2html-css": { file: "diff2html.min.css", type: "css" },
@@ -258,19 +267,27 @@
     settings: "__agentgate_settings",
     printScope: "__agentgate_print_scope",
     hash: "__agentgate_hash",
+    storageRes: "__agentgate_storage_res",
+    aiRes: "__agentgate_ai_res",
+    reviewInit: "__agentgate_review_init",
     // frame -> host
     ready: "__agentgate_ready",
     height: "__agentgate_app_height",
     frameHash: "__agentgate_frame_hash",
     currentFile: "__agentgate_current_file",
     pref: "__agentgate_pref",
+    frameError: "__agentgate_error",
+    frameLog: "__agentgate_log",
+    storageReq: "__agentgate_storage_req",
+    aiReq: "__agentgate_ai_req",
+    reviewState: "__agentgate_review_state",
   };
 
   // BRIDGE_SOURCE runs inside the frame. It handles the parts that do not need to know
-  // what is being rendered — measuring height, relaying host messages — and exposes
-  // window.AgentGateFrame so a renderer can subscribe to the rest. An uploaded webapp
-  // that knows nothing about this still gets height reporting, which is what the PDF
-  // export needs.
+  // what is being rendered — measuring height, relaying host messages, error/console
+  // capture, and host-bridged persistent storage / opt-in AI RPCs — and exposes
+  // window.AgentGateFrame (plus window.AgentGateStorage / window.storage and
+  // window.AgentGateAI / window.claude).
   //
   // Kept as a string rather than a file because it must be inlined: the frame cannot
   // fetch anything.
@@ -280,14 +297,72 @@
     "  function h(){var d=document,e=d.documentElement,b=d.body;",
     "    return Math.max(e?e.scrollHeight:0,e?e.offsetHeight:0,b?b.scrollHeight:0,b?b.offsetHeight:0);}",
     "  function send(k,v){try{parent.postMessage({__agentgate:1,type:k,value:v},'*');}catch(e){}}",
-    "  var api={onSettings:null,onPrintScope:null,onHash:null,",
+    "  var rpcSeq=0,storagePending={},aiPending={},logCount=0;",
+    "  function nextId(p){rpcSeq+=1;return p+'_'+rpcSeq+'_'+Date.now();}",
+    "  function callStorage(op,payload){",
+    "    return new Promise(function(res,rej){",
+    "      var id=nextId('st');",
+    "      var timer=setTimeout(function(){delete storagePending[id];rej(new Error('Storage request timed out'));},10000);",
+    "      storagePending[id]={res:function(v){clearTimeout(timer);res(v);},rej:function(e){clearTimeout(timer);rej(e);}};",
+    "      send(M.storageReq,Object.assign({id:id,op:op},payload));",
+    "    });",
+    "  }",
+    "  function normShared(opt){return typeof opt==='boolean'?opt:!!(opt&&opt.shared);}",
+    "  var storageApi={",
+    "    get:function(key,opt){return callStorage('get',{key:String(key||''),shared:normShared(opt)});},",
+    "    set:function(key,val,opt){return callStorage('set',{key:String(key||''),value:typeof val==='string'?val:JSON.stringify(val),shared:normShared(opt)});},",
+    "    delete:function(key,opt){return callStorage('delete',{key:String(key||''),shared:normShared(opt)});},",
+    "    list:function(prefix,opt){return callStorage('list',{prefix:String(prefix||''),shared:normShared(opt)});}",
+    "  };",
+    "  var aiApi={",
+    "    complete:function(input){",
+    "      var opts=typeof input==='string'?{prompt:input}:(input||{});",
+    "      return new Promise(function(res,rej){",
+    "        var id=nextId('ai');",
+    "        var timer=setTimeout(function(){delete aiPending[id];rej(new Error('AI request timed out'));},120000);",
+    "        aiPending[id]={res:function(v){clearTimeout(timer);res(v);},rej:function(e){clearTimeout(timer);rej(e);}};",
+    "        send(M.aiReq,{id:id,prompt:String(opts.prompt||''),system:String(opts.system||''),maxTokens:opts.maxTokens||1024});",
+    "      });",
+    "    }",
+    "  };",
+    "  var api={onSettings:null,onPrintScope:null,onHash:null,onReviewInit:null,",
+    "    storage:storageApi,ai:aiApi,",
     "    reportHeight:function(){send(M.height,h());},",
     "    reportHash:function(v){send(M.frameHash,v);},",
     "    reportCurrentFile:function(v){send(M.currentFile,v);},",
+    "    reportError:function(err){",
+    "      var o=(err&&typeof err==='object')?err:{message:String(err||'')};",
+    "      send(M.frameError,{message:String(o.message||'Error'),source:String(o.source||''),line:o.line||0,col:o.col||0,stack:String(o.stack||'')});",
+    "    },",
+    "    reportReviewState:function(st){send(M.reviewState,st);},",
     // The frame has no localStorage (opaque origin), so a view preference it wants to
     // remember is handed to the host to persist and replayed on the next load.
     "    savePref:function(k,v){send(M.pref,{key:k,value:v});}};",
     "  window.AgentGateFrame=api;",
+    "  window.AgentGateStorage=storageApi;",
+    "  if(!window.storage)window.storage=storageApi;",
+    "  window.AgentGateAI=aiApi;",
+    "  if(!window.claude)window.claude={complete:aiApi.complete};",
+    // Capture runtime errors & console warn/error for the host diagnostic drawer.
+    "  window.addEventListener('error',function(ev){",
+    "    if(!ev)return;",
+    "    var err=ev.error;",
+    "    api.reportError({message:ev.message||(err&&err.message)||'Script error',source:ev.filename||'',line:ev.lineno||0,col:ev.colno||0,stack:(err&&err.stack)||''});",
+    "  });",
+    "  window.addEventListener('unhandledrejection',function(ev){",
+    "    var r=ev&&ev.reason;",
+    "    api.reportError({message:(r&&r.message)||String(r||'Unhandled promise rejection'),stack:(r&&r.stack)||''});",
+    "  });",
+    "  ['log','info','warn','error'].forEach(function(lvl){",
+    "    var orig=console&&console[lvl];if(typeof orig!=='function')return;",
+    "    console[lvl]=function(){",
+    "      try{if(logCount<200){logCount++;",
+    "        var parts=[];for(var i=0;i<arguments.length;i++){",
+    "          var a=arguments[i];try{parts.push(typeof a==='string'?a:JSON.stringify(a));}catch(e){parts.push(String(a));}}",
+    "        send(M.frameLog,{level:lvl==='info'?'log':lvl,text:parts.join(' ').slice(0,2000)});}}catch(e){}",
+    "      return orig.apply(console,arguments);",
+    "    };",
+    "  });",
     // Settings are applied here rather than in each renderer: they are only CSS custom
     // properties, the theme/lang attributes, and highlight.js's dark-theme media query.
     "  api.applySettings=function(s){",
@@ -326,6 +401,13 @@
     "    if(d.type===M.printScope){try{Promise.resolve(api.onPrintScope&&api.onPrintScope(d.value))",
     "      .then(function(){api.reportHeight();});}catch(e){api.reportHeight();}return;}",
     "    if(d.type===M.hash){try{api.onHash&&api.onHash(d.value);}catch(e){}return;}",
+    "    if(d.type===M.reviewInit){try{api.onReviewInit&&api.onReviewInit(d.value);}catch(e){}return;}",
+    "    if(d.type===M.storageRes&&d.value&&storagePending[d.value.id]){",
+    "      var sp=storagePending[d.value.id];delete storagePending[d.value.id];",
+    "      if(d.value.ok){sp.res(d.value.result);}else{sp.rej(new Error(d.value.error||'Storage error'));}return;}",
+    "    if(d.type===M.aiRes&&d.value&&aiPending[d.value.id]){",
+    "      var ap=aiPending[d.value.id];delete aiPending[d.value.id];",
+    "      if(d.value.ok){ap.res(d.value.text);}else{ap.rej(new Error(d.value.error||'AI error'));}return;}",
     "  });",
     // Re-measure whenever layout changes (images decoding, fonts, a renderer expanding
     // a section) so the host can keep the frame at full height without polling.
@@ -646,6 +728,70 @@
     return { key: key, value: val };
   }
 
+  function safeError(value) {
+    if (!value || typeof value !== "object") return null;
+    var msg = String(value.message == null ? "" : value.message).slice(0, 2000);
+    if (!msg) return null;
+    var line = Number(value.line);
+    var col = Number(value.col);
+    return {
+      message: msg,
+      source: String(value.source == null ? "" : value.source).slice(0, 256),
+      line: isFinite(line) && line >= 0 ? Math.floor(line) : 0,
+      col: isFinite(col) && col >= 0 ? Math.floor(col) : 0,
+      stack: String(value.stack == null ? "" : value.stack).slice(0, 4000),
+    };
+  }
+
+  function safeLog(value) {
+    if (!value || typeof value !== "object") return null;
+    var level = value.level === "error" ? "error" : value.level === "warn" ? "warn" : "log";
+    var text = String(value.text == null ? "" : value.text).slice(0, 2000);
+    if (!text) return null;
+    return { level: level, text: text };
+  }
+
+  var MAX_STORAGE_VALUE_CHARS = 1024 * 1024; // 1 MB per key
+  function safeStorageReq(value) {
+    if (!value || typeof value !== "object") return null;
+    var id = String(value.id == null ? "" : value.id);
+    if (!id || id.length > 64) return null;
+    var op = String(value.op || "");
+    if (op !== "get" && op !== "set" && op !== "delete" && op !== "list") return null;
+    var key = String(value.key == null ? "" : value.key);
+    if (op !== "list") {
+      if (!key || key.length > 256 || /[\x00-\x1f]/.test(key)) return null;
+    }
+    var prefix = String(value.prefix == null ? "" : value.prefix).slice(0, 256);
+    var val = value.value == null ? "" : String(value.value);
+    if (op === "set" && val.length > MAX_STORAGE_VALUE_CHARS) return null;
+    return { id: id, op: op, key: key, value: val, prefix: prefix, shared: !!value.shared };
+  }
+
+  function safeAIReq(value) {
+    if (!value || typeof value !== "object") return null;
+    var id = String(value.id == null ? "" : value.id);
+    if (!id || id.length > 64) return null;
+    var prompt = String(value.prompt == null ? "" : value.prompt);
+    if (!prompt || prompt.length > 32000) return null;
+    var system = String(value.system == null ? "" : value.system).slice(0, 8000);
+    var maxTokens = Number(value.maxTokens);
+    if (!isFinite(maxTokens)) maxTokens = 1024;
+    maxTokens = Math.min(Math.max(Math.floor(maxTokens), 16), 8192);
+    return { id: id, prompt: prompt, system: system, maxTokens: maxTokens };
+  }
+
+  function safeReviewState(value) {
+    if (!value || typeof value !== "object") return null;
+    try {
+      var serialized = JSON.stringify(value);
+      if (!serialized || serialized.length > 131072) return null;
+      return JSON.parse(serialized);
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Mounting
   // ---------------------------------------------------------------------------
@@ -674,10 +820,22 @@
     frame.setAttribute("srcdoc", html);
     container.appendChild(frame);
 
+    var currentHtml = html;
     var lastHeight = 0;
     // Every event a caller can subscribe to must be listed here — on() ignores unknown
     // names, so a missing entry makes the subscription silently do nothing.
-    var handlers = { ready: [], height: [], hash: [], currentFile: [], pref: [] };
+    var handlers = {
+      ready: [],
+      height: [],
+      hash: [],
+      currentFile: [],
+      pref: [],
+      error: [],
+      log: [],
+      storageReq: [],
+      aiReq: [],
+      reviewState: [],
+    };
 
     function on(name, fn) {
       if (!handlers[name]) {
@@ -728,6 +886,34 @@
         var pref = safePref(d.value);
         return pref ? emit("pref", pref) : undefined;
       }
+      if (d.type === MSG.frameError) {
+        var errObj = safeError(d.value);
+        return errObj ? emit("error", errObj) : undefined;
+      }
+      if (d.type === MSG.frameLog) {
+        var logObj = safeLog(d.value);
+        return logObj ? emit("log", logObj) : undefined;
+      }
+      if (d.type === MSG.storageReq) {
+        var stReq = safeStorageReq(d.value);
+        if (stReq) return emit("storageReq", stReq);
+        if (d.value && typeof d.value.id === "string") {
+          post(MSG.storageRes, { id: d.value.id.slice(0, 64), ok: false, error: "Invalid storage request" });
+        }
+        return;
+      }
+      if (d.type === MSG.aiReq) {
+        var aiReq = safeAIReq(d.value);
+        if (aiReq) return emit("aiReq", aiReq);
+        if (d.value && typeof d.value.id === "string") {
+          post(MSG.aiRes, { id: d.value.id.slice(0, 64), ok: false, error: "Invalid AI request" });
+        }
+        return;
+      }
+      if (d.type === MSG.reviewState) {
+        var rev = safeReviewState(d.value);
+        return rev ? emit("reviewState", rev) : undefined;
+      }
     }
 
     function applyHeight(value) {
@@ -758,11 +944,24 @@
       setPrintScope: function (scope) {
         post(MSG.printScope, scope);
       },
+      replyStorage: function (payload) {
+        post(MSG.storageRes, payload);
+      },
+      replyAI: function (payload) {
+        post(MSG.aiRes, payload);
+      },
+      setReviewState: function (state) {
+        post(MSG.reviewInit, state);
+      },
+      reload: function (newHtml) {
+        currentHtml = newHtml;
+        frame.setAttribute("srcdoc", newHtml);
+      },
       // objectURL turns the assembled document into a same-document blob: URL, for
       // "open in a new tab" and "save as a single .html file". The saved file is
       // fully self-contained — every asset is already inlined.
       objectURL: function () {
-        return URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+        return URL.createObjectURL(new Blob([currentHtml], { type: "text/html;charset=utf-8" }));
       },
       destroy: function () {
         window.removeEventListener("message", onMessage);
@@ -840,6 +1039,11 @@
       safeFragment: safeFragment,
       safeName: safeName,
       safePref: safePref,
+      safeError: safeError,
+      safeLog: safeLog,
+      safeStorageReq: safeStorageReq,
+      safeAIReq: safeAIReq,
+      safeReviewState: safeReviewState,
       jsonForScriptTag: jsonForScriptTag,
       webappHaystack: webappHaystack,
       mentionsFeature: mentionsFeature,

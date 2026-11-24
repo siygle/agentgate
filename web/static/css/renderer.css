@@ -927,6 +927,181 @@
   padding-top: 1.5rem;
 }
 
+/* KaTeX math blocks inside doc renderer */
+.ag-math-block {
+  margin: 1rem 0;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.ag-math-inline {
+  display: inline;
+}
+
+/* Diff & Doc inline review UI */
+.diff-viewed-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.diff-viewed-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.diff-file--viewed .diff-header {
+  opacity: 0.8;
+}
+
+.diff-viewed-progress {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.diff-line-num--commentable {
+  cursor: pointer;
+  position: relative;
+}
+
+.diff-line-num--commentable:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary));
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.diff-comment-row td,
+.diff-comment-editor-row td {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  white-space: normal;
+  word-break: normal;
+}
+
+.ag-heading-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0;
+  vertical-align: middle;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.markdown-body h1:hover .ag-heading-comment-btn,
+.markdown-body h2:hover .ag-heading-comment-btn,
+.markdown-body h3:hover .ag-heading-comment-btn,
+.ag-heading-comment-btn:focus-visible {
+  opacity: 1;
+}
+
+.ag-heading-comment-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ag-doc-comment-thread {
+  margin: 0.25rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ag-inline-comment-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+}
+
+.ag-inline-comment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--fg-subtle);
+  margin-bottom: 0.25rem;
+}
+
+.ag-inline-comment-text {
+  color: var(--fg);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.ag-inline-comment-del {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.ag-inline-comment-del:hover {
+  color: var(--danger, #cf222e);
+}
+
+.ag-inline-comment-editor {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.625rem;
+  font-family: var(--font-sans);
+}
+
+.ag-inline-comment-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--fg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+  outline: none;
+}
+
+.ag-inline-comment-input:focus {
+  border-color: var(--accent);
+}
+
+.ag-inline-comment-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 @media (min-width: 1180px) {
   .plan-layout.no-sidebar {
       max-width: 980px;
@@ -938,7 +1113,10 @@
   .plan-wireframe-toolbar,
   .tab-bar,
   .copy-btn,
-  .diff-toolbar {
+  .diff-toolbar,
+  .diff-viewed-toggle,
+  .ag-heading-comment-btn,
+  .ag-inline-comment-editor {
       display: none !important;
     }
   

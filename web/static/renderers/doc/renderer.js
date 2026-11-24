@@ -288,14 +288,197 @@
     return null;
   }
 
+  function renderMath(container) {
+    if (!container) return;
+    var nodes = container.querySelectorAll("[data-ag-math]");
+    if (!nodes.length) return;
+    if (typeof katex === "undefined") {
+      console.warn("AgentGate: content contains math formulas but KaTeX was not inlined");
+      Array.prototype.forEach.call(nodes, function (node) {
+        var raw = node.getAttribute("data-ag-math") || "";
+        var tex = raw;
+        try {
+          tex = decodeURIComponent(raw);
+        } catch (e) {
+          /* keep raw */
+        }
+        node.innerHTML = '<code class="ag-missing-lib">' + UI.escapeHtml(tex) + "</code>";
+      });
+      return;
+    }
+    Array.prototype.forEach.call(nodes, function (node) {
+      var raw = node.getAttribute("data-ag-math") || "";
+      var tex = raw;
+      try {
+        tex = decodeURIComponent(raw);
+      } catch (e) {
+        /* keep raw */
+      }
+      var displayMode = node.getAttribute("data-ag-math-display") === "1";
+      try {
+        katex.render(tex, node, { displayMode: displayMode, throwOnError: false });
+      } catch (e) {
+        node.textContent = tex;
+      }
+    });
+  }
+
+  // --- section-level review comments (persisted via host reviewState bridge) --------
+
+  var reviewState = { viewed: {}, comments: [] };
+
+  function emitReviewState() {
+    if (Frame && typeof Frame.reportReviewState === "function") {
+      Frame.reportReviewState({ viewed: reviewState.viewed, comments: reviewState.comments });
+    }
+  }
+
+  function renderSectionComments(container) {
+    if (!container) return;
+    // Remove any previously injected comment UI before re-attaching.
+    Array.prototype.forEach.call(
+      container.querySelectorAll(".ag-heading-comment-btn, .ag-doc-comment-thread"),
+      function (el) {
+        el.remove();
+      }
+    );
+
+    var fileName = (current && current.title) || "document";
+    var headings = container.querySelectorAll("h1, h2, h3");
+    Array.prototype.forEach.call(headings, function (h) {
+      var sectionTitle = (h.textContent || "").trim();
+      if (!sectionTitle) return;
+
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ag-heading-comment-btn";
+      btn.textContent = "+";
+      btn.title = UI.t("review.addComment", null, "Add review comment");
+      btn.setAttribute("aria-label", btn.title);
+
+      var thread = document.createElement("div");
+      thread.className = "ag-doc-comment-thread";
+
+      function drawThread(openEditor) {
+        thread.textContent = "";
+        var matching = reviewState.comments.filter(function (c) {
+          return c.file === fileName && c.section === sectionTitle;
+        });
+        matching.forEach(function (c) {
+          var card = document.createElement("div");
+          card.className = "ag-inline-comment-card";
+          var meta = document.createElement("div");
+          meta.className = "ag-inline-comment-meta";
+          var ts = document.createElement("span");
+          ts.textContent = c.created_at || "";
+          var del = document.createElement("button");
+          del.type = "button";
+          del.className = "ag-inline-comment-del";
+          del.textContent = "×";
+          del.title = UI.t("review.deleteComment", null, "Delete comment");
+          del.addEventListener("click", function () {
+            reviewState.comments = reviewState.comments.filter(function (x) {
+              return x.id !== c.id;
+            });
+            emitReviewState();
+            drawThread(false);
+            Frame.reportHeight();
+          });
+          meta.appendChild(ts);
+          meta.appendChild(del);
+          var body = document.createElement("div");
+          body.className = "ag-inline-comment-text";
+          body.textContent = c.text;
+          card.appendChild(meta);
+          card.appendChild(body);
+          thread.appendChild(card);
+        });
+
+        if (openEditor) {
+          var box = document.createElement("div");
+          box.className = "ag-inline-comment-editor";
+          var ta = document.createElement("textarea");
+          ta.className = "ag-inline-comment-input";
+          ta.rows = 2;
+          ta.placeholder = UI.t("review.commentPlaceholder", null, "Add a review note for this section…");
+          var acts = document.createElement("div");
+          acts.className = "ag-inline-comment-actions";
+          var saveBtn = document.createElement("button");
+          saveBtn.type = "button";
+          saveBtn.className = "diff-toolbar-btn active";
+          saveBtn.textContent = UI.t("review.saveComment", null, "Save");
+          var cancelBtn = document.createElement("button");
+          cancelBtn.type = "button";
+          cancelBtn.className = "diff-toolbar-btn";
+          cancelBtn.textContent = UI.t("common.cancel", null, "Cancel");
+
+          function submit() {
+            var txt = (ta.value || "").trim();
+            if (!txt) return;
+            reviewState.comments.push({
+              id: "dc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+              file: fileName,
+              section: sectionTitle,
+              text: txt,
+              created_at: new Date().toLocaleTimeString(),
+            });
+            emitReviewState();
+            drawThread(false);
+            Frame.reportHeight();
+          }
+
+          saveBtn.addEventListener("click", submit);
+          ta.addEventListener("keydown", function (ev) {
+            if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+              ev.preventDefault();
+              submit();
+            } else if (ev.key === "Escape") {
+              drawThread(false);
+              Frame.reportHeight();
+            }
+          });
+          cancelBtn.addEventListener("click", function () {
+            drawThread(false);
+            Frame.reportHeight();
+          });
+
+          acts.appendChild(saveBtn);
+          acts.appendChild(cancelBtn);
+          box.appendChild(ta);
+          box.appendChild(acts);
+          thread.appendChild(box);
+          setTimeout(function () {
+            ta.focus();
+          }, 0);
+        }
+
+        thread.hidden = !thread.childNodes.length;
+      }
+
+      btn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        drawThread(true);
+        Frame.reportHeight();
+      });
+
+      h.appendChild(btn);
+      if (h.parentNode) {
+        h.parentNode.insertBefore(thread, h.nextSibling);
+      }
+      drawThread(false);
+    });
+  }
+
   function finishRenderedContent(node) {
     resolveAssets(node);
     promoteMermaidCodeBlocks(node);
+    renderMath(node);
     attachCodeHighlight(node);
     UI.attachCodeBlockCopyButtons(node);
     renderWireframes(node);
     UI.assignHeadingIds(node);
     UI.prepareLinks(node, { canResolveFile: resolveBundleFile });
+    renderSectionComments(node);
     return renderMermaid(node);
   }
 
@@ -420,6 +603,14 @@
   // the generated SVG, so it has to re-run from the saved diagram source.
   Frame.onSettings = function () {
     renderMermaid(article, true);
+  };
+
+  Frame.onReviewInit = function (st) {
+    if (!st || typeof st !== "object") return;
+    reviewState.viewed = st.viewed && typeof st.viewed === "object" ? st.viewed : {};
+    reviewState.comments = Array.isArray(st.comments) ? st.comments : [];
+    renderSectionComments(article);
+    Frame.reportHeight();
   };
 
   // --- boot -------------------------------------------------------------------------

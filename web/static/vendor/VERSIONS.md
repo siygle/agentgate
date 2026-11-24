@@ -21,6 +21,13 @@ These are committed rather than pulled from a CDN for two reasons:
 | `marked.min.js` | marked | *unverified (predates this file)* | `https://cdn.jsdelivr.net/npm/marked/marked.min.js` |
 | `diff2html.min.js` | diff2html | *unverified (predates this file)* | `https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js` |
 | `diff2html.min.css` | diff2html | *unverified (predates this file)* | `.../bundles/css/diff2html.min.css` |
+| `artifact-runtime.bundle.js` | react + react-dom + sucrase | 18.3.1 / 18.3.1 / 3.35.0 | **built** — see `tools/artifact-bundle` |
+| `twind.bundle.js` | @twind/core + preset-tailwind | 1.1.3 / 1.1.4 | **built** — see `tools/artifact-bundle` |
+| `lucide-react.bundle.js` | lucide-react | 0.475.0 | **built** — see `tools/artifact-bundle` |
+| `chartjs.bundle.js` | chart.js | 4.4.8 | **built** — see `tools/artifact-bundle` |
+| `recharts.bundle.js` | recharts | 2.15.1 | **built** — see `tools/artifact-bundle` |
+| `katex.bundle.js` | katex | 0.16.21 | **built** — see `tools/artifact-bundle` |
+| `katex.min.css` | katex CSS (woff2 inlined) | 0.16.21 | **built** — see `tools/artifact-bundle` |
 
 ## Refreshing
 

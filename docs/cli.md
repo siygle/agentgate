@@ -16,6 +16,7 @@ Worker with `AGENTGATE_SERVER`.
 | `agentgate docs <file\|dir>` | Encrypt & share Markdown/MDX documents |
 | `agentgate plan <file\|dir>` | Encrypt & share a visual plan bundle |
 | `agentgate webapp <dir>` | Encrypt & share a runnable static webapp |
+| `agentgate artifact <file\|dir>` | Encrypt & share an interactive React/JSX/TSX, SVG, or Mermaid artifact |
 | `agentgate list` | List shares this machine created |
 | `agentgate rekey <id\|url>` | Re-encrypt a share under a new passphrase |
 | `agentgate recovery-keygen` | Generate an offline recovery keypair (see [admin.md](admin.md)) |
@@ -63,9 +64,16 @@ address you uploaded to, so the printed links stay usable.
 
 ### `docs` — documents
 
-Encrypts a Markdown/MDX file or folder and renders it as written. AgentGate adds no
-visual-plan labels, recap labels, or feedback UI in this mode. Use it for specs, reports,
-notes, and design docs where the uploaded file structure should be preserved as-is.
+Encrypts a Markdown/MDX file or folder and renders it as written (including Mermaid diagrams and LaTeX/KaTeX math via `$...$`, `$$...$$`, or ```` ```math ```` fences). Use it for specs, reports, notes, and design docs where the uploaded file structure should be preserved as-is.
+
+### `artifact` — interactive React/JSX/TSX, SVG, or Mermaid artifact
+
+Encrypts a single `.tsx`/`.jsx`/`.ts`/`.js`/`.svg`/`.mmd`/`.mermaid` file or a multi-file directory and runs it directly inside the offline render sandbox with zero build step:
+
+- **React / JSX / TSX**: transpiled in-browser via vendored Sucrase and executed against a single vendored React 18 runtime. Optional libraries (`lucide-react`, `recharts`, `chart.js`, `lightweight-charts`, `mermaid`, `marked`, `katex`, `highlight.js`, plus Tailwind utility classes via Twind) are lazy-gated so an artifact only pays for what it imports.
+- **SVG & Mermaid**: rendered inside an interactive pan/zoom/background-toggle viewer with one-click SVG and PNG export.
+- **Live source inspector & console**: viewers can inspect/edit the artifact source in memory and reload without re-uploading, and inspect captured runtime errors or console warnings.
+- **Persistent client storage**: `window.storage` / `window.AgentGateStorage` (`get`, `set`, `delete`, `list`) is bridged to namespaced host `localStorage` so interactive apps keep state locally without breaking the zero-knowledge model.
 
 ### `plan` — visual plan
 

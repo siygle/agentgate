@@ -176,10 +176,108 @@
     return text;
   }
 
+  // protectMath pulls LaTeX math out of markdown prose before marked runs, so
+  // underscores, asterisks, and backslashes inside expressions are not mangled by
+  // markdown emphasis or escaping. Fenced code blocks and inline code spans are left
+  // completely untouched.
+  function protectMath(text) {
+    var tokens = [];
+    function stash(tex, display) {
+      var idx = tokens.length;
+      tokens.push({ tex: tex.trim(), display: !!display });
+      return "@@AG_MATH_" + idx + "@@";
+    }
+
+    // Split by fenced code blocks first so math inside ```...``` / ~~~...~~~ is untouched.
+    var lines = String(text || "").split("\n");
+    var out = [];
+    var buf = [];
+    var fenceChar = "";
+    var fenceLen = 0;
+
+    function flushProse() {
+      if (!buf.length) return;
+      var chunk = buf.join("\n");
+      buf = [];
+      // Protect inline code spans (`...`) while transforming surrounding prose.
+      var parts = chunk.split(/(`+[^`]*`+)/g);
+      for (var p = 0; p < parts.length; p++) {
+        if (p % 2 === 1) continue;
+        var s = parts[p];
+        s = s.replace(/\$\$([\s\S]+?)\$\$/g, function (_, tex) {
+          return "\n\n" + stash(tex, true) + "\n\n";
+        });
+        s = s.replace(/\\\[([\s\S]+?)\\\]/g, function (_, tex) {
+          return "\n\n" + stash(tex, true) + "\n\n";
+        });
+        s = s.replace(/\\\(([\s\S]+?)\\\)/g, function (_, tex) {
+          return stash(tex, false);
+        });
+        s = s.replace(/(^|[^\\$])\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?![$\d])/g, function (_, lead, tex) {
+          return lead + stash(tex, false);
+        });
+        parts[p] = s;
+      }
+      out.push(parts.join(""));
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var m = line.match(/^\s*(`{3,}|~{3,})/);
+      if (!fenceChar && m) {
+        flushProse();
+        fenceChar = m[1].charAt(0);
+        fenceLen = m[1].length;
+        out.push(line);
+      } else if (fenceChar) {
+        out.push(line);
+        var closeRe = new RegExp("^\\s*" + fenceChar + "{" + fenceLen + ",}\\s*$");
+        if (closeRe.test(line)) {
+          fenceChar = "";
+          fenceLen = 0;
+        }
+      } else {
+        buf.push(line);
+      }
+    }
+    flushProse();
+    return { text: out.join("\n"), tokens: tokens };
+  }
+
+  function restoreMath(html, tokens) {
+    if (!tokens || !tokens.length) return html;
+    var out = String(html || "");
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i];
+      var encoded = encodeURIComponent(tok.tex).replace(/"/g, "%22");
+      var placeholder = "@@AG_MATH_" + i + "@@";
+      if (tok.display) {
+        var blockHtml =
+          '<div class="ag-math-block" data-ag-math-display="1" data-ag-math="' +
+          encoded +
+          '">' +
+          escapeHtml(tok.tex) +
+          "</div>";
+        out = out.replace("<p>" + placeholder + "</p>", blockHtml);
+        out = out.replace(placeholder, blockHtml);
+      } else {
+        var inlineHtml =
+          '<span class="ag-math-inline" data-ag-math-display="0" data-ag-math="' +
+          encoded +
+          '">' +
+          escapeHtml(tok.tex) +
+          "</span>";
+        out = out.replace(placeholder, inlineHtml);
+      }
+    }
+    return out;
+  }
+
   function renderMarkdown(content) {
     var prepared = preprocessMdx(content);
+    var protectedMath = protectMath(prepared);
     if (typeof marked !== "undefined") {
-      return marked.parse(prepared);
+      return restoreMath(marked.parse(protectedMath.text), protectedMath.tokens);
     }
     return prepared;
   }
@@ -193,6 +291,10 @@
           var normalizedLang = (lang || "").toLowerCase();
           if (normalizedLang === "mermaid") {
             return '<div class="mermaid">' + code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + "</div>";
+          }
+          if (normalizedLang === "math" || normalizedLang === "latex" || normalizedLang === "katex") {
+            var encoded = encodeURIComponent(String(code || "").trim()).replace(/"/g, "%22");
+            return '<div class="ag-math-block" data-ag-math-display="1" data-ag-math="' + encoded + '">' + escapeHtml(code) + "</div>";
           }
           if (normalizedLang === "wireframe" || normalizedLang === "html-wireframe") {
             return '<div class="plan-wireframe-source" data-wireframe="' + encodeURIComponent(code).replace(/"/g, "%22") + '"></div>';
@@ -218,6 +320,8 @@
   window.AgentGateMarkdown = {
     isMarkdown: isMarkdown,
     stripFrontmatter: stripFrontmatter,
+    protectMath: protectMath,
+    restoreMath: restoreMath,
     renderMarkdown: renderMarkdown,
   };
 })();

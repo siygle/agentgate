@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+  Built-in renderer: interactive Artifacts (React/JSX/TSX, SVG, Mermaid).
+
+  Runs inside AgentGate's render sandbox (opaque-origin iframe with
+  `default-src 'none'; connect-src 'none'`). Every library below is vendored on
+  the server and gated by data-agentgate-when so an artifact only pays for what
+  it actually imports or uses.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGate artifact</title>
+
+<link rel="stylesheet" href="agentgate:tokens">
+<link rel="stylesheet" href="agentgate:katex-css" data-agentgate-when="katex">
+<link rel="stylesheet" href="agentgate:highlight-css" data-agentgate-when="highlight">
+<link rel="stylesheet" href="agentgate:highlight-dark-css" media="(prefers-color-scheme: dark)" data-agentgate-when="highlight">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="ag-artifact-body">
+<div id="root" class="ag-artifact-root"></div>
+
+<script src="agentgate:artifact-runtime" data-agentgate-when="react"></script>
+<script src="agentgate:tailwind" data-agentgate-when="tailwind"></script>
+<script src="agentgate:lucide" data-agentgate-when="lucide"></script>
+<script src="agentgate:recharts" data-agentgate-when="recharts"></script>
+<script src="agentgate:chartjs" data-agentgate-when="chartjs"></script>
+<script src="agentgate:lightweight-charts" data-agentgate-when="lightweight-charts"></script>
+<script src="agentgate:mermaid" data-agentgate-when="mermaid"></script>
+<script src="agentgate:marked" data-agentgate-when="marked"></script>
+<script src="agentgate:katex" data-agentgate-when="katex"></script>
+<script src="agentgate:highlight" data-agentgate-when="highlight"></script>
+<script src="agentgate:i18n"></script>
+<script src="/static/renderers/common/frame-ui.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

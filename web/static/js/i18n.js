@@ -69,6 +69,7 @@
       "passphrase.failed": "Decryption failed. Please check your passphrase.",
 
       // Share labels
+      "kind.artifact": "artifact — {title}",
       "kind.webappOne": "webapp — 1 file",
       "kind.webappMany": "webapp — {n} files",
       "kind.diff": "diff — {title}",
@@ -76,6 +77,38 @@
       "kind.documents": "documents — {title}",
       "kind.filesOne": "1 file",
       "kind.filesMany": "{n} files",
+
+      // Artifact renderer, inspector & diagnostics
+      "artifact.resetZoom": "Fit",
+      "artifact.bgAuto": "Auto",
+      "artifact.bgLight": "Light",
+      "artifact.bgDark": "Dark",
+      "artifact.bgChecker": "Grid",
+      "artifact.runtimeError": "Artifact runtime error",
+      "artifact.compileError": "Artifact compile/execution error",
+      "artifact.codeBtn": "Code",
+      "artifact.codeTitle": "Inspect and live-edit source files",
+      "artifact.runReload": "Run / Reload",
+      "artifact.resetCode": "Reset",
+      "artifact.editedHint": "Local in-memory edits only (not uploaded).",
+      "artifact.diagnostics": "Console",
+      "artifact.diagnosticsTitle": "Runtime errors and console warnings",
+      "artifact.diagEmpty": "No errors or warnings recorded.",
+      "artifact.diagClear": "Clear",
+      "artifact.diagCopy": "Copy for agent",
+      "artifact.aiDisabled": "AI completion is disabled by default in AgentGate (offline sandbox mode — no external network requests are made).",
+
+      // Review state (diff & doc)
+      "review.viewed": "Viewed",
+      "review.viewedProgress": "{done}/{total} viewed",
+      "review.addComment": "Add review comment",
+      "review.commentPlaceholder": "Add a review comment…",
+      "review.saveComment": "Save",
+      "review.deleteComment": "Delete comment",
+      "review.title": "Review",
+      "review.inlineComments": "Inline comments",
+      "review.generalNotes": "General notes",
+      "review.noComments": "Click any diff line number or document heading to add an inline comment.",
 
       // Expiry & Owner controls
       "expiry.expired": "Expired",
@@ -279,6 +312,7 @@
       "passphrase.failed": "解密失敗，請確認密碼是否正確。",
 
       // Share labels
+      "kind.artifact": "互動作品 — {title}",
       "kind.webappOne": "網頁應用 — 1 個檔案",
       "kind.webappMany": "網頁應用 — {n} 個檔案",
       "kind.diff": "差異比較 — {title}",
@@ -286,6 +320,38 @@
       "kind.documents": "文件 — {title}",
       "kind.filesOne": "1 個檔案",
       "kind.filesMany": "{n} 個檔案",
+
+      // Artifact renderer, inspector & diagnostics
+      "artifact.resetZoom": "適應畫面",
+      "artifact.bgAuto": "自動",
+      "artifact.bgLight": "淺色",
+      "artifact.bgDark": "深色",
+      "artifact.bgChecker": "網格",
+      "artifact.runtimeError": "作品執行期錯誤",
+      "artifact.compileError": "作品編譯／執行錯誤",
+      "artifact.codeBtn": "程式碼",
+      "artifact.codeTitle": "檢視並即時編輯原始碼",
+      "artifact.runReload": "執行／重新載入",
+      "artifact.resetCode": "重設",
+      "artifact.editedHint": "僅在本機記憶體中修改（不會上傳回伺服器）。",
+      "artifact.diagnostics": "主控台",
+      "artifact.diagnosticsTitle": "執行期錯誤與主控台警告",
+      "artifact.diagEmpty": "目前沒有錯誤或警告。",
+      "artifact.diagClear": "清除",
+      "artifact.diagCopy": "複製給 Agent",
+      "artifact.aiDisabled": "AgentGate 預設停用 AI 補全功能（離線沙盒模式 — 不會發出外部網路請求）。",
+
+      // Review state (diff & doc)
+      "review.viewed": "已審閱",
+      "review.viewedProgress": "已審閱 {done}/{total}",
+      "review.addComment": "新增審閱註解",
+      "review.commentPlaceholder": "輸入審閱註解…",
+      "review.saveComment": "儲存",
+      "review.deleteComment": "刪除註解",
+      "review.title": "審閱",
+      "review.inlineComments": "行內註解",
+      "review.generalNotes": "一般回饋",
+      "review.noComments": "點擊任意 Diff 行號或文件標題旁的 + 即可新增行內註解。",
 
       // Expiry & Owner controls
       "expiry.expired": "已過期",

@@ -36,6 +36,7 @@ function check(name, cond) {
   check("visual-recap maps to visual-plan", K.classify({ kind: "visual-recap", files: [] }) === "visual-plan");
   check("documents by kind", K.classify({ kind: "documents", files: [] }) === "documents");
   check("webapp by kind", K.classify({ kind: "webapp", files: [] }) === "webapp");
+  check("artifact by kind", K.classify({ kind: "artifact", files: [] }) === "artifact");
   check("diff by kind", K.classify({ kind: "diff", files: [] }) === "diff");
 }
 
@@ -210,6 +211,58 @@ const doc = (content, extra) =>
     K.plan({ kind: "documents", files: [{ title: "a.mdx", content: "# x" }] }).allowEval === true &&
       K.plan({ kind: "documents", files: [{ title: "a.md", content: "# x" }] }).allowEval === false
   );
+}
+
+// --- detectFeatures: katex math in docs -------------------------------------------
+{
+  check("display $$ math enables katex", doc("Formula:\n\n$$E = mc^2$$").katex === true);
+  check("inline $x$ math enables katex", doc("Let $x_1 + x_2 = 1$ hold.").katex === true);
+  check("```math fence enables katex", doc("```math\n\\int_0^1 x dx\n```").katex === true);
+  check("\\(...\\) enables katex", doc("Inline \\(a+b\\) math.").katex === true);
+  check("\\[...\\] enables katex", doc("Display \\[a+b\\] math.").katex === true);
+  check("plain prose does not enable katex", doc("Just regular words here.").katex === false);
+  check("currency amounts do not enable katex", doc("It costs $5 or $10 total.").katex === false);
+}
+
+// --- detectFeatures & plan: artifact ----------------------------------------------
+{
+  const reactFiles = [
+    {
+      title: "App.tsx",
+      content: `
+        import React from "react";
+        import { Home } from "lucide-react";
+        import { LineChart } from "recharts";
+        export default function App() { return <div className="p-4"><Home /><LineChart /></div>; }
+      `,
+    },
+  ];
+  const rf = K.detectFeatures({ kind: "artifact", entry: "App.tsx", files: reactFiles }, reactFiles, "artifact");
+  check("react artifact enables react", rf.react === true);
+  check("react artifact detects tailwind via className", rf.tailwind === true);
+  check("react artifact detects lucide", rf.lucide === true);
+  check("react artifact detects recharts", rf.recharts === true);
+  check("react artifact leaves unused chartjs off", rf.chartjs === false);
+  check("react artifact leaves unused mermaid off", rf.mermaid === false);
+  check("react artifact leaves unused katex off", rf.katex === false);
+
+  const reactPlan = K.plan({ kind: "artifact", entry: "App.tsx", files: reactFiles });
+  check("artifact plan uses artifact renderer", reactPlan.renderer === "artifact");
+  check("artifact plan sets fixed and inspectable", reactPlan.fixed === true && reactPlan.inspectable === true);
+  check("react artifact grants allowEval", reactPlan.allowEval === true);
+
+  const svgFiles = [{ title: "diagram.svg", content: "<svg></svg>" }];
+  const svgPlan = K.plan({ kind: "artifact", entry: "diagram.svg", files: svgFiles });
+  check("svg artifact does not load react", svgPlan.features.react === false);
+  check("svg artifact withholds allowEval", svgPlan.allowEval === false);
+
+  const mmdFiles = [{ title: "flow.mmd", content: "graph TD\nA-->B" }];
+  const mmdPlan = K.plan({ kind: "artifact", entry: "flow.mmd", files: mmdFiles });
+  check("mermaid artifact loads mermaid only", mmdPlan.features.mermaid === true && mmdPlan.features.react === false);
+  check("mermaid artifact withholds allowEval", mmdPlan.allowEval === false);
+
+  check("diff plan enables review", K.plan({ kind: "diff", files: [] }).review === true);
+  check("documents plan enables review", K.plan({ kind: "documents", files: [] }).review === true);
 }
 
 console.log(`share-kind: ${checks} checks passed`);

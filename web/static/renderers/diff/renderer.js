@@ -109,6 +109,145 @@
     table.appendChild(group);
   }
 
+  // --- review state (persisted on host via reviewInit / reviewState bridge) ---------
+
+  var reviewState = { viewed: {}, comments: [] };
+
+  function emitReviewState() {
+    if (Frame && typeof Frame.reportReviewState === "function") {
+      Frame.reportReviewState({ viewed: reviewState.viewed, comments: reviewState.comments });
+    }
+  }
+
+  function commentsForLine(filename, side, lineNum) {
+    var num = Number(lineNum);
+    return reviewState.comments.filter(function (c) {
+      return c.file === filename && c.side === side && Number(c.line) === num;
+    });
+  }
+
+  function buildCommentRow(colSpan, filename, side, lineNum, comment) {
+    var tr = document.createElement("tr");
+    tr.className = "diff-comment-row";
+    var td = document.createElement("td");
+    td.colSpan = colSpan;
+    var card = document.createElement("div");
+    card.className = "ag-inline-comment-card";
+    var meta = document.createElement("div");
+    meta.className = "ag-inline-comment-meta";
+    var loc = document.createElement("span");
+    loc.textContent = (side === "old" ? "−L" : "+L") + lineNum + (comment.created_at ? " · " + comment.created_at : "");
+    var del = document.createElement("button");
+    del.type = "button";
+    del.className = "ag-inline-comment-del";
+    del.textContent = "×";
+    del.title = UI.t("review.deleteComment", null, "Delete comment");
+    del.addEventListener("click", function () {
+      reviewState.comments = reviewState.comments.filter(function (x) {
+        return x.id !== comment.id;
+      });
+      emitReviewState();
+      renderFiles();
+    });
+    meta.appendChild(loc);
+    meta.appendChild(del);
+    var body = document.createElement("div");
+    body.className = "ag-inline-comment-text";
+    body.textContent = comment.text;
+    card.appendChild(meta);
+    card.appendChild(body);
+    td.appendChild(card);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function openCommentEditor(afterRow, colSpan, filename, side, lineNum) {
+    var existing = afterRow.nextElementSibling;
+    if (existing && existing.classList.contains("diff-comment-editor-row")) {
+      existing.remove();
+      Frame.reportHeight();
+      return;
+    }
+    var tr = document.createElement("tr");
+    tr.className = "diff-comment-editor-row";
+    var td = document.createElement("td");
+    td.colSpan = colSpan;
+    var box = document.createElement("div");
+    box.className = "ag-inline-comment-editor";
+    var header = document.createElement("div");
+    header.className = "ag-inline-comment-meta";
+    header.textContent = filename + ":" + lineNum + " (" + side + ")";
+    var ta = document.createElement("textarea");
+    ta.className = "ag-inline-comment-input";
+    ta.rows = 2;
+    ta.placeholder = UI.t("review.commentPlaceholder", null, "Add a review comment…");
+    var acts = document.createElement("div");
+    acts.className = "ag-inline-comment-actions";
+    var saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "diff-toolbar-btn active";
+    saveBtn.textContent = UI.t("review.saveComment", null, "Save");
+    var cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "diff-toolbar-btn";
+    cancelBtn.textContent = UI.t("common.cancel", null, "Cancel");
+
+    function submit() {
+      var txt = (ta.value || "").trim();
+      if (!txt) return;
+      reviewState.comments.push({
+        id: "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        file: filename,
+        side: side,
+        line: Number(lineNum),
+        text: txt,
+        created_at: new Date().toLocaleTimeString(),
+      });
+      emitReviewState();
+      renderFiles();
+    }
+
+    saveBtn.addEventListener("click", submit);
+    ta.addEventListener("keydown", function (ev) {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+        ev.preventDefault();
+        submit();
+      } else if (ev.key === "Escape") {
+        tr.remove();
+        Frame.reportHeight();
+      }
+    });
+    cancelBtn.addEventListener("click", function () {
+      tr.remove();
+      Frame.reportHeight();
+    });
+
+    acts.appendChild(saveBtn);
+    acts.appendChild(cancelBtn);
+    box.appendChild(header);
+    box.appendChild(ta);
+    box.appendChild(acts);
+    td.appendChild(box);
+    tr.appendChild(td);
+    if (afterRow.parentNode) {
+      afterRow.parentNode.insertBefore(tr, afterRow.nextSibling);
+    }
+    Frame.reportHeight();
+    setTimeout(function () {
+      ta.focus();
+    }, 0);
+  }
+
+  function makeCommentableLineCell(cell, rowEl, colSpan, filename, side, lineNum) {
+    if (!lineNum) return;
+    cell.classList.add("diff-line-num--commentable");
+    cell.title = UI.t("review.addComment", null, "Add review comment");
+    cell.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      openCommentEditor(rowEl, colSpan, filename, side, lineNum);
+    });
+  }
+
   function renderUnifiedView(file) {
     var table = document.createElement("table");
     table.className = "diff-table unified";
@@ -145,7 +284,21 @@
           '<td class="diff-line-num text-mono">' + oldNum + "</td>" +
           '<td class="diff-line-num text-mono">' + newNum + "</td>" +
           '<td class="diff-line-content"><span class="diff-prefix">' + prefix + "</span>" + hl + "</td>";
+        var cells = row.querySelectorAll("td.diff-line-num");
+        if (oldNum && cells[0]) makeCommentableLineCell(cells[0], row, 3, file.filename, "old", oldNum);
+        if (newNum && cells[1]) makeCommentableLineCell(cells[1], row, 3, file.filename, "new", newNum);
         table.appendChild(row);
+
+        if (oldNum) {
+          commentsForLine(file.filename, "old", oldNum).forEach(function (c) {
+            table.appendChild(buildCommentRow(3, file.filename, "old", oldNum, c));
+          });
+        }
+        if (newNum) {
+          commentsForLine(file.filename, "new", newNum).forEach(function (c) {
+            table.appendChild(buildCommentRow(3, file.filename, "new", newNum, c));
+          });
+        }
         lineIdx++;
       });
     });
@@ -205,7 +358,21 @@
           '<td class="diff-line-content ' + leftClass + '">' + leftContent + "</td>" +
           '<td class="diff-line-num text-mono ' + rightClass + '">' + rightNum + "</td>" +
           '<td class="diff-line-content ' + rightClass + '">' + rightContent + "</td>";
+        var cells = row.querySelectorAll("td.diff-line-num");
+        if (leftNum && cells[0]) makeCommentableLineCell(cells[0], row, 4, file.filename, "old", leftNum);
+        if (rightNum && cells[1]) makeCommentableLineCell(cells[1], row, 4, file.filename, "new", rightNum);
         table.appendChild(row);
+
+        if (leftNum) {
+          commentsForLine(file.filename, "old", leftNum).forEach(function (c) {
+            table.appendChild(buildCommentRow(4, file.filename, "old", leftNum, c));
+          });
+        }
+        if (rightNum) {
+          commentsForLine(file.filename, "new", rightNum).forEach(function (c) {
+            table.appendChild(buildCommentRow(4, file.filename, "new", rightNum, c));
+          });
+        }
       });
     });
     return table;
@@ -237,10 +404,21 @@
       diffFiles.length === 1
         ? UI.t("frame.diffFileOne", null, "1 file")
         : UI.t("frame.diffFiles", { n: diffFiles.length }, diffFiles.length + " files");
+    var viewedCount = diffFiles.filter(function (f) {
+      return !!reviewState.viewed[f.filename];
+    }).length;
+    var viewedHtml = diffFiles.length
+      ? ' | <span class="diff-viewed-progress">' +
+        escapeHtml(
+          UI.t("review.viewedProgress", { done: viewedCount, total: diffFiles.length }, viewedCount + "/" + diffFiles.length + " viewed")
+        ) +
+        "</span>"
+      : "";
     summary.innerHTML =
       escapeHtml(fileCount) + " | " +
       '<span class="badge-add">+' + totalAdd + "</span> " +
-      '<span class="badge-del">-' + totalDel + "</span>";
+      '<span class="badge-del">-' + totalDel + "</span>" +
+      viewedHtml;
   }
   renderSummary();
 
@@ -262,23 +440,53 @@
   function renderFiles() {
     filesContainer.textContent = "";
     diffFiles.forEach(function (file) {
+      var isViewed = !!reviewState.viewed[file.filename];
       var fileBlock = document.createElement("div");
-      fileBlock.className = "diff-file";
+      fileBlock.className = "diff-file" + (isViewed ? " diff-file--viewed" : "");
 
       var fileHeader = document.createElement("div");
       fileHeader.className = "diff-header";
       fileHeader.innerHTML =
-        '<span class="diff-collapse-arrow">&#9660;</span>' +
+        '<span class="diff-collapse-arrow' + (isViewed ? " collapsed" : "") + '">&#9660;</span>' +
         '<span class="text-mono text-sm">' + escapeHtml(file.filename) + "</span> " +
         '<span class="badge-add">+' + file.addedLines + "</span> " +
         '<span class="badge-del">-' + file.deletedLines + "</span>";
       var arrow = fileHeader.querySelector(".diff-collapse-arrow");
+
+      var viewedLabel = document.createElement("label");
+      viewedLabel.className = "diff-viewed-toggle";
+      var viewedBox = document.createElement("input");
+      viewedBox.type = "checkbox";
+      viewedBox.checked = isViewed;
+      var viewedText = document.createElement("span");
+      viewedText.textContent = UI.t("review.viewed", null, "Viewed");
+      viewedLabel.appendChild(viewedBox);
+      viewedLabel.appendChild(viewedText);
+      viewedLabel.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+      });
+      fileHeader.appendChild(viewedLabel);
       fileBlock.appendChild(fileHeader);
 
       var contentDiv = document.createElement("div");
-      contentDiv.className = "diff-file-content";
+      contentDiv.className = "diff-file-content" + (isViewed ? " collapsed" : "");
       contentDiv.appendChild(mode === "unified" ? renderUnifiedView(file) : renderSplitView(file));
       fileBlock.appendChild(contentDiv);
+
+      viewedBox.addEventListener("change", function () {
+        var checked = !!viewedBox.checked;
+        if (checked) {
+          reviewState.viewed[file.filename] = true;
+        } else {
+          delete reviewState.viewed[file.filename];
+        }
+        fileBlock.classList.toggle("diff-file--viewed", checked);
+        contentDiv.classList.toggle("collapsed", checked);
+        arrow.classList.toggle("collapsed", checked);
+        renderSummary();
+        emitReviewState();
+        Frame.reportHeight();
+      });
 
       fileHeader.addEventListener("click", function () {
         contentDiv.classList.toggle("collapsed");
@@ -288,6 +496,7 @@
 
       filesContainer.appendChild(fileBlock);
     });
+    renderSummary();
     UI.assignHeadingIds(filesContainer);
     find.refresh();
     Frame.reportHeight();
@@ -353,6 +562,13 @@
 
   Frame.onHash = function (hash) {
     UI.scrollToHash(hash);
+  };
+
+  Frame.onReviewInit = function (st) {
+    if (!st || typeof st !== "object") return;
+    reviewState.viewed = st.viewed && typeof st.viewed === "object" ? st.viewed : {};
+    reviewState.comments = Array.isArray(st.comments) ? st.comments : [];
+    if (diffFiles.length) renderFiles();
   };
 
   UI.wireAnchors(filesContainer);

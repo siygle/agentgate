@@ -11,6 +11,8 @@ test:
 	node web/static/js/crypto.node.test.mjs
 	node web/static/js/i18n.node.test.mjs
 	node web/static/renderers/common/frame-ui.node.test.mjs
+	node web/static/renderers/artifact/renderer.node.test.mjs
+	node web/static/renderers/doc/markdown.node.test.mjs
 	go run ./cmd/crossvector > /tmp/agentgate-crossvector.json && node web/static/js/crypto.crossvector.test.mjs /tmp/agentgate-crossvector.json && rm -f /tmp/agentgate-crossvector.json
 	cd worker && npm run typecheck && npm test
 

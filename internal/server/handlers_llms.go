@@ -71,6 +71,7 @@ Set the server URL (required) and generate an encryption passphrase:
 - ` + "`agentgate docs <file|dir>`" + `: Share rendered Markdown/MDX documents
 - ` + "`agentgate plan <file|dir>`" + `: Share a visual plan bundle
 - ` + "`agentgate webapp <dir>`" + `: Share a runnable static webapp containing index.html
+- ` + "`agentgate artifact <file|dir>`" + `: Share a zero-build interactive React/JSX/TSX, SVG, or Mermaid artifact
 - ` + "`agentgate key-gen [key]`" + `: Generate or set encryption passphrase
 - ` + "`agentgate key-get`" + `: Print current passphrase
 
@@ -140,11 +141,18 @@ sandbox before rendering, so it costs nothing in the payload.
 | ` + "`agentgate:mermaid`" + ` | ` + "`mermaid`" + ` | Diagrams (flowcharts, sequence, ER, …) |
 | ` + "`agentgate:diff2html`" + ` | ` + "`Diff2Html`" + ` | Unified-diff rendering |
 | ` + "`agentgate:lightweight-charts`" + ` | ` + "`LightweightCharts`" + ` | TradingView financial charts |
+| ` + "`agentgate:artifact-runtime`" + ` | ` + "`AgentGateArtifactVendor`" + ` | React 18 + Sucrase JSX/TSX runtime |
+| ` + "`agentgate:tailwind`" + ` | ` + "`AgentGateTwind`" + ` | Offline Tailwind utility CSS runtime (Twind) |
+| ` + "`agentgate:lucide`" + ` | ` + "`LucideReact`" + ` | Lucide React icons |
+| ` + "`agentgate:chartjs`" + ` | ` + "`Chart`" + ` | Chart.js |
+| ` + "`agentgate:recharts`" + ` | ` + "`Recharts`" + ` | Recharts charting library |
+| ` + "`agentgate:katex`" + ` | ` + "`katex`" + ` | KaTeX math typesetting |
 
 Stylesheets use the same mechanism via ` + "`<link rel=\"stylesheet\">`" + `:
 
 | Reference | Pairs with |
 |-----------|-----------|
+| ` + "`agentgate:katex-css`" + ` | ` + "`agentgate:katex`" + ` (woff2 fonts inlined) |
 | ` + "`agentgate:highlight-css`" + ` | ` + "`agentgate:highlight`" + ` (light theme) |
 | ` + "`agentgate:highlight-dark-css`" + ` | ` + "`agentgate:highlight`" + ` (dark theme) |
 | ` + "`agentgate:diff2html-css`" + ` | ` + "`agentgate:diff2html`" + ` |

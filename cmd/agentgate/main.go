@@ -84,6 +84,8 @@ func main() {
 		runFiles(args)
 	case "webapp":
 		runWebapp(args)
+	case "artifact":
+		runArtifact(args)
 	case "plan":
 		runPlan(args)
 	case "docs":
@@ -113,6 +115,7 @@ Commands:
   git-staged  [-s server] [-p passphrase|-R] [-t ttl|--no-expiry]           Share staged changes
   files       [-s server] [-p passphrase|-R] [-t ttl|--no-expiry] <paths...> Share files
   webapp      [-s server] [-p passphrase|-R] [-t ttl|--no-expiry] <dir>      Share a runnable static webapp
+  artifact    [-s server] [-p passphrase|-R] [-t ttl|--no-expiry] <file|dir> Share an interactive React/JSX/TSX, SVG, or Mermaid artifact
   plan        [-s server] [-p passphrase|-R] [-t ttl|--no-expiry] <file|dir> Share an encrypted visual plan
   docs        [-s server] [-p passphrase|-R] [-t ttl|--no-expiry] <file|dir> Share encrypted generic documents
   list        [-m master] [--show-secrets] [--refresh] [-s server]          List shares created on this machine
@@ -498,6 +501,8 @@ func printCreateResponse(body []byte, server string, displayMode string) *create
 	switch displayMode {
 	case "app":
 		label = "App URL"
+	case "artifact":
+		label = "Artifact URL"
 	case "plan":
 		label = "Plan URL"
 	case "docs":
@@ -743,6 +748,123 @@ func runPlan(args []string) {
 
 func runDocs(args []string) {
 	runDocumentBundle(args, "documents", "docs")
+}
+
+func pickArtifactEntry(files []FilesPayloadFile) string {
+	preferred := []string{"App.tsx", "App.jsx", "index.tsx", "index.jsx", "app.tsx", "app.jsx", "main.tsx", "main.jsx"}
+	byPath := make(map[string]string, len(files))
+	for _, f := range files {
+		byPath[strings.TrimPrefix(f.Title, "./")] = f.Title
+	}
+	for _, p := range preferred {
+		if got, ok := byPath[p]; ok {
+			return got
+		}
+	}
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f.Title))
+		switch ext {
+		case ".tsx", ".jsx", ".svg", ".mmd", ".mermaid", ".ts", ".js":
+			return f.Title
+		}
+	}
+	if len(files) > 0 {
+		return files[0].Title
+	}
+	return ""
+}
+
+func buildArtifactPayload(root string) (PlanPayload, int, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return PlanPayload{}, 0, err
+	}
+	var files []FilesPayloadFile
+	totalBytes := 0
+	if info.IsDir() {
+		err = filepath.Walk(root, func(p string, fi os.FileInfo, werr error) error {
+			if werr != nil {
+				return werr
+			}
+			base := filepath.Base(p)
+			if fi.IsDir() {
+				if p != root && (strings.HasPrefix(base, ".") || base == "node_modules") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.HasPrefix(base, ".") {
+				return nil
+			}
+			rel, rerr := filepath.Rel(root, p)
+			if rerr != nil {
+				return rerr
+			}
+			rel = filepath.ToSlash(rel)
+			file, n, ferr := readBundleFile(p, rel)
+			if ferr != nil {
+				return ferr
+			}
+			totalBytes += n
+			files = append(files, file)
+			return nil
+		})
+		if err != nil {
+			return PlanPayload{}, 0, err
+		}
+	} else {
+		file, n, ferr := readBundleFile(root, filepath.Base(root))
+		if ferr != nil {
+			return PlanPayload{}, 0, ferr
+		}
+		totalBytes += n
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		return PlanPayload{}, 0, fmt.Errorf("no usable artifact files found")
+	}
+	entry := pickArtifactEntry(files)
+	title := strings.TrimSuffix(filepath.Base(entry), filepath.Ext(entry))
+	if info.IsDir() {
+		dirBase := filepath.Base(filepath.Clean(root))
+		if dirBase != "" && dirBase != "." && dirBase != string(filepath.Separator) {
+			title = dirBase
+		}
+	}
+	return PlanPayload{
+		Kind:        "artifact",
+		Title:       title,
+		Entry:       entry,
+		Files:       files,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+	}, totalBytes, nil
+}
+
+func runArtifact(args []string) {
+	serverFlag, passFlag, masterFlag, ttlFlag, noExpiry, randomFlag, paths := parseFlags(args)
+	server, err := resolveServer(serverFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	passphrase, generated, err := resolvePassphraseForUpload(passFlag, randomFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	if len(paths) != 1 {
+		fmt.Fprintln(os.Stderr, "error: artifact takes exactly one file or directory")
+		os.Exit(1)
+	}
+
+	payload, totalBytes, err := buildArtifactPayload(paths[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading %s: %v\n", paths[0], err)
+		os.Exit(1)
+	}
+	warnIfOverBudget(totalBytes)
+	encryptAndPostMode(server, "/api/files", payload, passphrase, masterFlag, ttlFlag, noExpiry, generated, "artifact")
 }
 
 func runDocumentBundle(args []string, kind, displayMode string) {

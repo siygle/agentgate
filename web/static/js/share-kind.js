@@ -46,6 +46,48 @@
     return /\.(md|mdx|markdown)$/i.test(name || "");
   }
 
+  // hasMath detects LaTeX / KaTeX math notation in Markdown/MDX documents:
+  //   - fenced ```math / ```latex / ```katex blocks
+  //   - display math $$...$$ or \[...\]
+  //   - inline math $...$ (non-whitespace edges, not followed by a digit) or \(...\)
+  // Intentionally slightly over-inclusive (same rule as detectFeatures below):
+  // false positives cost bytes, false negatives leave raw TeX on screen.
+  function hasMath(text) {
+    if (!text) return false;
+    if (/(^|\n)\s*(```+|~~~+)\s*(math|latex|katex)\b/i.test(text)) return true;
+    if (/\$\$[\s\S]+?\$\$/.test(text)) return true;
+    if (/\\\[[\s\S]+?\\\]/.test(text)) return true;
+    if (/\\\([\s\S]+?\\\)/.test(text)) return true;
+    if (/(?:^|[^\\$])\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?![$\d])/.test(text)) return true;
+    return false;
+  }
+
+  function artifactEntryExt(data, files) {
+    var entry = (data && data.entry) || "";
+    if (!entry && files && files.length) {
+      var preferred = ["App.tsx", "App.jsx", "index.tsx", "index.jsx", "app.tsx", "app.jsx", "main.tsx", "main.jsx"];
+      for (var i = 0; i < preferred.length; i++) {
+        for (var j = 0; j < files.length; j++) {
+          if ((files[j].title || "").replace(/^\.?\//, "") === preferred[i]) {
+            entry = files[j].title;
+            break;
+          }
+        }
+        if (entry) break;
+      }
+      if (!entry) {
+        for (var k = 0; k < files.length; k++) {
+          if (/\.(tsx|jsx|svg|mmd|mermaid|ts|js)$/i.test(files[k].title || "")) {
+            entry = files[k].title;
+            break;
+          }
+        }
+      }
+      if (!entry) entry = files[0].title || "";
+    }
+    return String(entry).split(".").pop().toLowerCase();
+  }
+
   // payloadText concatenates every text file in the bundle. Binary assets carry
   // encoding "base64" and are skipped — scanning base64 for source patterns would only
   // produce false positives.
@@ -71,6 +113,51 @@
   // needing a library that was not inlined, rather than degrading quietly.
   function detectFeatures(data, files, type) {
     var text = payloadText(data, files);
+
+    if (type === "artifact") {
+      var entryExt = artifactEntryExt(data, files);
+      if (entryExt === "svg") {
+        return {
+          react: false,
+          tailwind: false,
+          lucide: false,
+          recharts: false,
+          chartjs: false,
+          "lightweight-charts": false,
+          mermaid: false,
+          marked: false,
+          katex: false,
+          highlight: false,
+        };
+      }
+      if (entryExt === "mmd" || entryExt === "mermaid") {
+        return {
+          react: false,
+          tailwind: false,
+          lucide: false,
+          recharts: false,
+          chartjs: false,
+          "lightweight-charts": false,
+          mermaid: true,
+          marked: false,
+          katex: false,
+          highlight: false,
+        };
+      }
+      return {
+        react: true,
+        tailwind: /\bclassName\s*=|\btw\s*\(|@twind|tailwind/i.test(text),
+        lucide: /lucide-react|\bLucideReact\b/.test(text),
+        recharts: /["']recharts["']|\bRecharts\b/.test(text),
+        chartjs: /["']chart\.js(?:\/auto)?["']|\bnew\s+Chart\b|\bChart\./.test(text),
+        "lightweight-charts": /["']lightweight-charts["']|\bLightweightCharts\b/.test(text),
+        mermaid: /["']mermaid["']|\bmermaid\./.test(text),
+        marked: /["']marked["']|\bmarked\./.test(text),
+        katex: /["']katex["']|\bkatex\./i.test(text),
+        highlight: /["']highlight\.js["']|\bhljs\b/.test(text),
+      };
+    }
+
     var mdx = hasMdx(data, files);
 
     // A ```mermaid / ~~~mermaid fence, the MDX <Mermaid> component, or an author-written
@@ -98,10 +185,10 @@
       // (its Source tab highlights the raw markdown), so highlighting is not gated here —
       // gating it would leave source panes unstyled. `marked` is, since a bundle with no
       // markdown never renders a preview.
-      return { markdown: hasMarkdown, highlight: true, mermaid: false, mdx: false };
+      return { markdown: hasMarkdown, highlight: true, mermaid: false, mdx: false, katex: false };
     }
     // doc renderer: it always renders markdown, so `marked` is not gated.
-    return { markdown: true, highlight: code, mermaid: mermaid, mdx: mdx };
+    return { markdown: true, highlight: code, mermaid: mermaid, mdx: mdx, katex: hasMath(text) };
   }
 
   function routeView() {
@@ -109,11 +196,12 @@
     return (route && route.view) || "";
   }
 
-  // classify returns "diff" | "webapp" | "documents" | "visual-plan" | "files".
+  // classify returns "diff" | "webapp" | "artifact" | "documents" | "visual-plan" | "files".
   function classify(data) {
     var files = data.files || [];
     var kind = data.kind || "";
 
+    if (kind === "artifact") return "artifact";
     if (kind === "visual-plan" || kind === "visual-recap") return "visual-plan";
     if (kind === "documents") return "documents";
     if (kind === "webapp") return "webapp";
@@ -147,11 +235,30 @@
       (data.entry || "").replace(/\.[^.]+$/, "") ||
       (files.length === 1 ? files[0].title : "");
 
+    if (type === "artifact") {
+      var artFeatures = detectFeatures(data, files, "artifact");
+      var artTitle = title || t("common.untitled", null, "untitled");
+      return {
+        renderer: "artifact",
+        fixed: true,
+        inspectable: true,
+        label: t("kind.artifact", { title: artTitle }, "artifact — " + (title || "untitled")),
+        labelKey: "kind.artifact",
+        labelVars: { title: title || "" },
+        title: title || "artifact",
+        features: artFeatures,
+        // React/JSX/TSX artifacts compile with Sucrase and execute via new Function().
+        allowEval: !!artFeatures.react,
+        exportKind: "files",
+      };
+    }
+
     if (type === "webapp") {
       var webKey = files.length === 1 ? "kind.webappOne" : "kind.webappMany";
       var webVars = { n: files.length };
       return {
         webapp: true,
+        inspectable: true,
         label: t(webKey, webVars, "webapp — " + files.length + " file" + (files.length === 1 ? "" : "s")),
         labelKey: webKey,
         labelVars: webVars,
@@ -164,6 +271,7 @@
       var diffTitle = title || t("common.untitled", null, "untitled");
       return {
         renderer: "diff",
+        review: true,
         label: t("kind.diff", { title: diffTitle }, "diff — " + (title || "untitled")),
         labelKey: "kind.diff",
         labelVars: { title: title || "" },
@@ -182,6 +290,7 @@
       var docTitle = title || t("common.untitled", null, "untitled");
       return {
         renderer: "doc",
+        review: true,
         label: t(docKey, { title: docTitle }, (isPlan ? "visual plan" : "documents") + " — " + (title || "untitled")),
         labelKey: docKey,
         labelVars: { title: title || "" },
@@ -208,5 +317,5 @@
     };
   }
 
-  window.AgentGateShareKind = { classify: classify, plan: plan, detectFeatures: detectFeatures };
+  window.AgentGateShareKind = { classify: classify, plan: plan, detectFeatures: detectFeatures, hasMath: hasMath };
 })();

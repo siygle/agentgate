@@ -51,6 +51,7 @@ Commands:
 - `agentgate docs <file|dir>` — share rendered Markdown/MDX documents.
 - `agentgate plan <file|dir>` — share a visual plan bundle.
 - `agentgate webapp <dir>` — share a runnable static prototype with `index.html`.
+- `agentgate artifact <file|dir>` — share a zero-build React/JSX/TSX app, SVG, or Mermaid diagram.
 
 TTL:
 - Default server TTL is 7 days.
@@ -88,11 +89,18 @@ nothing in the payload.
 | `agentgate:mermaid` | `mermaid` | Diagrams (flowchart, sequence, ER, …) |
 | `agentgate:diff2html` | `Diff2Html` | Unified-diff parsing |
 | `agentgate:lightweight-charts` | `LightweightCharts` | TradingView financial charts |
+| `agentgate:artifact-runtime` | `AgentGateArtifactVendor` (`React`, `ReactDOM`) | React 18 + Sucrase JSX/TSX runtime |
+| `agentgate:tailwind` | `AgentGateTwind` | Offline Tailwind utility CSS runtime (Twind) |
+| `agentgate:lucide` | `LucideReact` | Lucide React icon set |
+| `agentgate:chartjs` | `Chart` | Chart.js (`chart.js/auto`) |
+| `agentgate:recharts` | `Recharts` | Recharts React charting library |
+| `agentgate:katex` | `katex` | KaTeX LaTeX math typesetting |
 
 Stylesheets work the same way through `<link rel="stylesheet">`:
 
 | Reference | Pairs with |
 |-----------|-----------|
+| `agentgate:katex-css` | `agentgate:katex` (woff2 fonts inlined) |
 | `agentgate:highlight-css` | `agentgate:highlight` (light theme) |
 | `agentgate:highlight-dark-css` | `agentgate:highlight` (dark theme) |
 | `agentgate:diff2html-css` | `agentgate:diff2html` |

@@ -814,14 +814,23 @@
   min-height: 0;
 }
 
+.shell-viewer--fixed .shell-workspace,
 .shell-viewer--fixed .shell-frame-host {
   min-height: 0;
+}
+
+.shell-workspace {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
 }
 
 .shell-frame-host {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .shell-frame {
@@ -830,6 +839,256 @@
   min-height: 60vh;
   border: none;
   background: var(--bg);
+}
+
+.shell-frame--fixed {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.shell-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  color: var(--fg);
+}
+
+.shell-badge--error {
+  background: var(--danger, #cf222e);
+  color: #fff;
+}
+
+.shell-badge--warn {
+  background: #d97706;
+  color: #fff;
+}
+
+/* Artifact / Webapp source inspector split pane */
+.shell-inspector {
+  width: 42%;
+  min-width: 320px;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.shell-inspector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.shell-inspector-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.shell-inspector-tab {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.shell-inspector-tab:hover {
+  color: var(--fg);
+  background: var(--bg-tertiary);
+}
+
+.shell-inspector-tab.active {
+  color: var(--fg);
+  background: var(--bg);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.shell-inspector-editor {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 240px;
+  padding: 0.75rem;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.shell-inspector-hint {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--fg-subtle);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+
+/* Diagnostics drawer */
+.shell-diag-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.shell-diag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+
+.shell-diag-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shell-diag-empty {
+  padding: 0.75rem 0;
+  font-size: 0.8125rem;
+  color: var(--fg-subtle);
+}
+
+.shell-diag-entry {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  font-size: 0.75rem;
+}
+
+.shell-diag-entry--error {
+  border-left: 3px solid var(--danger, #cf222e);
+}
+
+.shell-diag-entry--warn {
+  border-left: 3px solid #d97706;
+}
+
+.shell-diag-entry--log {
+  border-left: 3px solid var(--fg-subtle);
+}
+
+.shell-diag-entry-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  color: var(--fg-subtle);
+}
+
+.shell-diag-level {
+  font-weight: 700;
+  font-size: 0.6875rem;
+}
+
+.shell-diag-entry--error .shell-diag-level {
+  color: var(--danger, #cf222e);
+}
+
+.shell-diag-entry--warn .shell-diag-level {
+  color: #d97706;
+}
+
+.shell-diag-msg {
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shell-diag-stack {
+  margin: 0.375rem 0 0;
+  padding: 0.5rem;
+  background: var(--bg);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 0.6875rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plan-feedback-subhead {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  margin: 0.25rem 0 0.375rem;
+}
+
+.plan-feedback-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 860px) {
+  .shell-workspace--split {
+    flex-direction: column;
+  }
+
+  .shell-inspector {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 45vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* Header controls that are a single glyph rather than a word. */
@@ -1074,6 +1333,8 @@
   .export-trigger,
   .file-viewer-header,
   .plan-feedback,
+  .shell-inspector,
+  .shell-diag-drawer,
   .passphrase-dialog {
       display: none !important;
     }

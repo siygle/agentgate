@@ -38,6 +38,9 @@ function check(name, cond) {
   check("bridge guards external links from in-frame navigation", /window\.open\(href,'_blank','noopener,noreferrer'\)/.test(I.BRIDGE_SOURCE));
   check("bridge toggles highlight-dark-css media on theme change", /highlight-dark-css/.test(I.BRIDGE_SOURCE));
   check("bridge syncs language into AgentGateI18n", /AgentGateI18n/.test(I.BRIDGE_SOURCE));
+  check("bridge defines AgentGateStorage / storage", /window\.AgentGateStorage=storageApi/.test(I.BRIDGE_SOURCE));
+  check("bridge defines AgentGateAI / claude", /window\.AgentGateAI=aiApi/.test(I.BRIDGE_SOURCE));
+  check("bridge captures runtime errors", /addEventListener\('error'/.test(I.BRIDGE_SOURCE));
   check("mount allows popups to escape sandbox", src.includes("allow-popups-to-escape-sandbox"));
 }
 
@@ -247,6 +250,27 @@ function check(name, cond) {
   check("name passes through", I.safeName("plan.mdx") === "plan.mdx");
   check("absurdly long name rejected", I.safeName("x".repeat(600)) === "");
   check("null name becomes empty", I.safeName(null) === "");
+
+  // Extended bridge sanitizers (errors, logs, storage RPC, AI RPC, review state)
+  check("safeError accepts valid payload", I.safeError({ message: "boom", line: 12, col: 4 }).line === 12);
+  check("safeError rejects empty message", I.safeError({ message: "" }) === null);
+  check("safeLog normalizes level", I.safeLog({ level: "warn", text: "hi" }).level === "warn");
+  check("safeLog rejects empty text", I.safeLog({ level: "error", text: "" }) === null);
+  check("safeStorageReq accepts get/set/delete/list",
+    I.safeStorageReq({ id: "s1", op: "get", key: "k" }).op === "get" &&
+    I.safeStorageReq({ id: "s2", op: "set", key: "k", value: "v", shared: true }).shared === true &&
+    I.safeStorageReq({ id: "s3", op: "list", prefix: "a/" }).prefix === "a/"
+  );
+  check("safeStorageReq rejects invalid op or control chars",
+    I.safeStorageReq({ id: "s4", op: "drop", key: "k" }) === null &&
+    I.safeStorageReq({ id: "s5", op: "get", key: "bad\nkey" }) === null
+  );
+  check("safeAIReq clamps maxTokens", I.safeAIReq({ id: "a1", prompt: "hi", maxTokens: 999999 }).maxTokens === 8192);
+  check("safeAIReq rejects empty prompt", I.safeAIReq({ id: "a2", prompt: "" }) === null);
+  check("safeReviewState round-trips valid state",
+    I.safeReviewState({ viewed: { "a.go": true }, comments: [] }).viewed["a.go"] === true
+  );
+  check("safeReviewState rejects non-object", I.safeReviewState("nope") === null);
 }
 
 // --- bundle file map --------------------------------------------------------------

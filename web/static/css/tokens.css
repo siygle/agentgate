@@ -60,6 +60,12 @@
   box-sizing: border-box;
 }
 
+/* Author display: flex / inline-flex rules override the user-agent [hidden] rule
+   unless reinforced here. Applies to both host chrome and sandboxed frames. */
+[hidden] {
+  display: none !important;
+}
+
 body,
 h1,
 h2,
